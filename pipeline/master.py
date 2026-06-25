@@ -18,7 +18,7 @@ import tempfile
 import numpy as np
 import pedalboard as pb
 
-from . import dsp
+from . import dsp, target
 from .ingest import Audio, write_wav, decode
 from .settings import Settings
 
@@ -60,15 +60,23 @@ def apply_width(x: np.ndarray, sr: int, s: Settings) -> np.ndarray:
 # --------------------------------------------------------------------------- #
 # Signature chain (the character)
 # --------------------------------------------------------------------------- #
-def signature_chain(x: np.ndarray, sr: int, s: Settings) -> np.ndarray:
+def signature_chain(x: np.ndarray, sr: int, s: Settings,
+                    do_target_match: bool = False) -> np.ndarray:
     x = dsp.to_stereo(x)
 
     # 1. Clarity EQ: kill rumble + a small mud dip.
     x = dsp.highpass(x, sr, 26.0, order=2)
     x = pb.Pedalboard([pb.PeakFilter(cutoff_frequency_hz=300.0, gain_db=-1.0, q=1.0)])(x, sr)
 
+    # 1b. Corrective tonal match toward the genre target curve. Only when there
+    #     is no reference (auto / out-of-box genre); a Matchering reference
+    #     already defines tone, so we don't fight it here.
+    if do_target_match:
+        x = target.matching_eq(x, sr, strength=0.7, max_db=4.0)
+
     # 2. Warmth: oversampled tanh saturation + optional low-shelf below 120 Hz.
-    x = dsp.soft_clip_tanh(x, drive=0.6 * s.warmth, sr=sr, oversample=s.oversample)
+    #    2x is plenty for gentle drive; the mandatory 4x stays on the limiter.
+    x = dsp.soft_clip_tanh(x, drive=0.6 * s.warmth, sr=sr, oversample=2)
     if s.warmth > 0:
         x = pb.Pedalboard([
             pb.LowShelfFilter(cutoff_frequency_hz=120.0, gain_db=1.5 * s.warmth, q=0.7),
@@ -141,24 +149,33 @@ def master(bus: Audio, s: Settings, reference_path: str | None = None):
     x = bus.data
     mode = s.mode
 
+    matched_to_reference = False
     if mode in ("genre", "my_reference"):
         ref = reference_path if mode == "my_reference" else _find_genre_reference()
         if not ref or not os.path.isfile(ref):
-            notices.append(
-                "No reference available — falling back to Fully automatic. "
-                "Add a commercially-mastered hip-hop WAV to references/hiphop/ "
-                "(or drop one in 'My reference') for reference matching."
-            )
+            if mode == "genre":
+                notices.append(
+                    "No reference WAV in references/hiphop/ — using the built-in "
+                    "hip-hop genre target curve. Drop a commercially-mastered "
+                    "reference there to match a specific track instead."
+                )
+            else:
+                notices.append(
+                    "No reference provided — using the built-in genre target curve."
+                )
             mode = "auto"
         else:
             try:
                 x = _run_matchering(bus, ref)
+                matched_to_reference = True
             except Exception as exc:  # matchering can reject short/odd files
-                notices.append(f"Matchering failed ({exc}); used Fully automatic instead.")
+                notices.append(f"Matchering failed ({exc}); used the genre target curve instead.")
                 mode = "auto"
 
-    # Signature chain runs in every mode (colour in ref modes; the master in auto).
-    x = signature_chain(x, sr, s)
+    # Signature chain runs in every mode. The corrective target-match runs only
+    # when no reference set the tone (auto / out-of-box genre).
+    x = signature_chain(x, sr, s, do_target_match=not matched_to_reference)
 
-    info = {"mode_used": mode, "requested_mode": s.mode}
+    info = {"mode_used": mode, "requested_mode": s.mode,
+            "matched_to_reference": matched_to_reference}
     return Audio(dsp.to_stereo(x), sr), info, notices

@@ -7,9 +7,11 @@ Drops in a processed vocal + an instrumental, returns a loud, streaming-safe
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
+import sys
 import tempfile
 import threading
 import uuid
@@ -19,6 +21,8 @@ import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 from pipeline import Settings, process_album, run
 from pipeline.ingest import write_wav
@@ -28,7 +32,34 @@ STATIC_DIR = os.path.join(HERE, "static")
 JOBS_DIR = os.path.join(tempfile.gettempdir(), "mixmaster_jobs")
 os.makedirs(JOBS_DIR, exist_ok=True)
 
+# Set APP_PASSWORD to require a password (any username) when hosting publicly.
+APP_PASSWORD = os.environ.get("APP_PASSWORD")
+# Cap upload size to keep a public instance from being overwhelmed (MB).
+MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "150"))
+
 app = FastAPI(title="Hip-Hop Mix & Master")
+
+
+class BasicAuthMiddleware(BaseHTTPMiddleware):
+    """Optional HTTP Basic auth — active only when APP_PASSWORD is set."""
+
+    async def dispatch(self, request, call_next):
+        ok = False
+        hdr = request.headers.get("Authorization", "")
+        if hdr.startswith("Basic "):
+            try:
+                _, _, pw = base64.b64decode(hdr[6:]).decode("utf-8").partition(":")
+                ok = pw == APP_PASSWORD
+            except Exception:
+                ok = False
+        if not ok:
+            return Response("Authentication required", status_code=401,
+                            headers={"WWW-Authenticate": 'Basic realm="mixmaster"'})
+        return await call_next(request)
+
+
+if APP_PASSWORD:
+    app.add_middleware(BasicAuthMiddleware)
 
 
 # --------------------------------------------------------------------------- #
@@ -170,10 +201,14 @@ app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
 
 def main():
-    host, port = "127.0.0.1", 8000
+    # Local default binds loopback; a host (e.g. Railway) sets HOST/PORT in env.
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "8000"))
     url = f"http://{host}:{port}"
-    print(f"\n  Hip-Hop Mix & Master  →  {url}\n")
-    threading.Timer(1.2, lambda: _try_open(url)).start()
+    print(f"\n  Hip-Hop Mix & Master  →  http://127.0.0.1:{port}\n")
+    # Only pop a browser for an interactive local run, never on a server.
+    if host in ("127.0.0.1", "localhost") and sys.stdout.isatty():
+        threading.Timer(1.2, lambda: _try_open(url)).start()
     uvicorn.run(app, host=host, port=port, log_level="info")
 
 

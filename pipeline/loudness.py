@@ -6,7 +6,6 @@ at -1.0 dBTP with an oversampled true-peak limiter, and dither to 24-bit.
 from __future__ import annotations
 
 import numpy as np
-import pedalboard as pb
 from scipy import signal
 
 from . import dsp
@@ -19,24 +18,22 @@ def _oversampled_limit(x: np.ndarray, sr: int, ceiling_db: float, oversample: in
     """Brick-wall at ``ceiling_db`` dBTP using an oversampled lookahead limiter.
 
     Limits in the oversampled domain so inter-sample peaks are caught, then
-    decimates back. A final hard safety clip guarantees the ceiling.
+    decimates back. The ceiling is set a touch under target so post-decimation
+    ripple still lands under the brick wall; a final safety clip guarantees it.
     """
     x = dsp.to_stereo(x)
     ceiling = dsp.db_to_lin(ceiling_db)
 
     up = signal.resample_poly(x, oversample, 1, axis=0).astype(np.float32)
-
-    # JUCE limiter at the oversampled rate, ceiling set just under target so the
-    # post-decimation ripple still lands under the brick wall.
-    limiter = pb.Pedalboard([pb.Limiter(threshold_db=ceiling_db - 0.3, release_ms=80.0)])
-    up = limiter(up, sr * oversample)
-
-    # Guarantee the ceiling in the oversampled domain before decimating.
+    up = dsp.lookahead_limiter(up, sr * oversample, ceiling_db - 0.3,
+                               lookahead_ms=1.0, release_ms=80.0)
     np.clip(up, -ceiling, ceiling, out=up)
 
     down = signal.resample_poly(up, 1, oversample, axis=0).astype(np.float32)
     if down.shape[0] != x.shape[0]:
         down = dsp._fit_length(down, x.shape[0])
+    # Decimation can reintroduce a hair of overshoot; clamp to the true ceiling.
+    np.clip(down, -ceiling, ceiling, out=down)
     return down
 
 
@@ -54,7 +51,7 @@ def finalize(colored: Audio, s: Settings, target_lufs: float | None = None):
     x, _ = gain_to_lufs(x, sr, target)
 
     # 2. Gentle pre-limiter soft-clip for density (perceived loudness w/o pump).
-    x = dsp.soft_clip_tanh(x, drive=0.25, sr=sr, oversample=s.oversample)
+    x = dsp.soft_clip_tanh(x, drive=0.25, sr=sr, oversample=2)
 
     # 3. True-peak limiter, brick-walled at the ceiling, oversampled. Iterate
     #    limit + loudness-match: density/limiting shifts loudness either way, so

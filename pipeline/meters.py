@@ -43,34 +43,54 @@ def gain_to_lufs(x: np.ndarray, sr: int, target_lufs: float):
     return (x * dsp.db_to_lin(gain_db)).astype(np.float32), gain_db
 
 
-def loudness_range(x: np.ndarray, sr: int) -> float:
-    """Loudness Range (LRA), LU, per EBU 3342: gated 10th-95th percentile spread
-    of 3 s short-term loudness measured every 1 s."""
+def _short_term_loudness(x: np.ndarray, sr: int) -> np.ndarray:
+    """3 s short-term loudness (LUFS) every 1 s, via a single K-weighting pass.
+
+    Reuses the meter's BS.1770 K-weighting biquads, applies them once to the
+    whole signal, then takes windowed mean power — far faster than re-metering
+    each window. Falls back to per-window metering if internals are unavailable.
+    """
+    from scipy.signal import lfilter
+    from scipy.ndimage import uniform_filter1d
+
     x = dsp.ensure_2d(x)
-    buf = x[:, 0] if x.shape[1] == 1 else x
     win = int(3.0 * sr)
     hop = int(1.0 * sr)
-    if buf.shape[0] < win:
-        return 0.0
+    if x.shape[0] < win:
+        return np.array([])
+
     meter = _meter(sr)
-    st = []
-    for start in range(0, buf.shape[0] - win + 1, hop):
-        seg = buf[start : start + win]
-        try:
-            lv = float(meter.integrated_loudness(seg))
-        except Exception:
-            continue
-        if np.isfinite(lv):
-            st.append(lv)
-    if len(st) < 2:
-        return 0.0
-    st = np.array(st)
-    # absolute gate at -70 LUFS, then relative gate at -20 LU below mean
-    st = st[st >= -70.0]
+    try:
+        y = x.astype(np.float64)
+        for filt in meter._filters.values():           # high-shelf then high-pass
+            y = lfilter(filt.b, filt.a, y, axis=0)
+        power = np.mean(y ** 2, axis=1)                 # L/R channel weights = 1.0
+        mean_pow = uniform_filter1d(power, size=win, mode="constant", origin=0)
+        centers = np.arange(win // 2, x.shape[0] - win // 2, hop)
+        mp = np.maximum(mean_pow[centers], 1e-12)
+        return -0.691 + 10.0 * np.log10(mp)
+    except Exception:
+        buf = x[:, 0] if x.shape[1] == 1 else x
+        out = []
+        for start in range(0, x.shape[0] - win + 1, hop):
+            try:
+                lv = float(meter.integrated_loudness(buf[start:start + win]))
+            except Exception:
+                continue
+            if np.isfinite(lv):
+                out.append(lv)
+        return np.array(out)
+
+
+def loudness_range(x: np.ndarray, sr: int) -> float:
+    """Loudness Range (LRA), LU, per EBU 3342: gated 10th-95th percentile spread
+    of the short-term loudness distribution."""
+    st = _short_term_loudness(x, sr)
+    st = st[np.isfinite(st)]
+    st = st[st >= -70.0]                # absolute gate
     if st.size < 2:
         return 0.0
-    rel_gate = st.mean() - 20.0
-    st = st[st >= rel_gate]
+    st = st[st >= st.mean() - 20.0]     # relative gate, 20 LU below the mean
     if st.size < 2:
         return 0.0
     lo, hi = np.percentile(st, 10), np.percentile(st, 95)

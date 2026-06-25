@@ -1,0 +1,17 @@
+.git
+.gitignore
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+.DS_Store
+*.egg-info/
+mixmaster_jobs/
+*.output
+# user reference audio — never bake copyrighted material into the image
+references/hiphop/*.wav
+references/hiphop/*.aif
+references/hiphop/*.aiff
+references/hiphop/*.flac
+references/hiphop/*.mp3

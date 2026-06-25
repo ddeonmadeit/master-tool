@@ -43,13 +43,14 @@ report, and a **24-bit WAV** download.
 
 | Mode | What it does |
 |---|---|
-| **Genre reference** (default) | Matchering matches your mix toward a reference WAV in `references/hiphop/`. Falls back to Fully automatic if the folder is empty. |
+| **Genre reference** (default) | If a reference WAV sits in `references/hiphop/`, Matchering matches your mix toward it. If not, it uses the **built-in hip-hop target curve** — so it works on-genre out of the box, no reference needed. |
 | **My reference** | Drop your own reference master; Matchering matches toward it. |
-| **Fully automatic** | No reference — the signature chain alone masters to a fixed target. |
+| **Fully automatic** | No reference — analyses your mix's spectrum and corrects it toward the genre target curve, then applies the signature chain. |
 
-> **References are user-supplied.** No commercial tracks are bundled (copyright).
-> Add your own clean, same-genre reference to `references/hiphop/`. See that
-> folder's README.
+> **Commercial references are user-supplied.** No copyrighted tracks are bundled.
+> The built-in target curve means you don't *need* one — but adding a clean,
+> same-genre reference WAV to `references/hiphop/` matches a specific record. See
+> that folder's README.
 
 ## Taste controls
 
