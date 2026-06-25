@@ -72,7 +72,7 @@ def signature_chain(x: np.ndarray, sr: int, s: Settings,
     #     is no reference (auto / out-of-box genre); a Matchering reference
     #     already defines tone, so we don't fight it here.
     if do_target_match:
-        x = target.matching_eq(x, sr, strength=0.7, max_db=4.0)
+        x = target.matching_eq(x, sr, strength=0.5, max_db=3.0)
 
     # 2. Warmth: oversampled tanh saturation + optional low-shelf below 120 Hz.
     #    2x is plenty for gentle drive; the mandatory 4x stays on the limiter.
@@ -82,13 +82,15 @@ def signature_chain(x: np.ndarray, sr: int, s: Settings,
             pb.LowShelfFilter(cutoff_frequency_hz=120.0, gain_db=1.5 * s.warmth, q=0.7),
         ])(x, sr)
 
-    # 3. Tame harsh highs dynamically (clamp only when bands get hot), then air.
+    # 3. Tame harsh highs dynamically. Thresholds sit high and reduction is
+    #    capped low so these only clamp genuinely hot/harsh transients instead of
+    #    riding the whole high end (which dulled the master). Then a little air.
     x = dsp.dynamic_band_reduction(x, sr, 3000.0, 6000.0,
-                                   threshold_db=-24.0, ratio=2.5,
-                                   max_reduction_db=3.0, attack_ms=1.0, release_ms=80.0)
+                                   threshold_db=-18.0, ratio=2.0,
+                                   max_reduction_db=2.0, attack_ms=1.0, release_ms=80.0)
     x = dsp.dynamic_band_reduction(x, sr, 6000.0, 10000.0,
-                                   threshold_db=-26.0, ratio=2.5,
-                                   max_reduction_db=3.0, attack_ms=1.0, release_ms=80.0)
+                                   threshold_db=-20.0, ratio=2.0,
+                                   max_reduction_db=2.0, attack_ms=1.0, release_ms=80.0)
     x = pb.Pedalboard([
         pb.HighShelfFilter(cutoff_frequency_hz=12000.0, gain_db=1.0, q=0.7),
     ])(x, sr)

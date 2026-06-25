@@ -10,7 +10,7 @@ from scipy import signal
 
 from . import dsp
 from .ingest import Audio
-from .meters import integrated_lufs, gain_to_lufs
+from .meters import integrated_lufs
 from .settings import Settings
 
 
@@ -38,39 +38,36 @@ def _oversampled_limit(x: np.ndarray, sr: int, ceiling_db: float, oversample: in
 
 
 def finalize(colored: Audio, s: Settings, target_lufs: float | None = None):
-    """Apply makeup to target LUFS, density soft-clip, true-peak limit, dither.
+    """Reach the loudness target through a clipper -> true-peak limiter, dither.
 
     Returns (master_24: Audio, info: dict). ``master_24`` is float but already
     dithered & guaranteed under the true-peak ceiling; write it as PCM_24.
+
+    Gain staging matters: we push level *into* a peak clipper + lookahead limiter
+    rather than pre-amplifying the whole mix into a full-range waveshaper. The
+    clipper only rounds transient tips toward the ceiling (the body of the mix is
+    untouched), so the result is loud without the crushed, distorted, dull sound
+    that pre-amplifying into a tanh saturator produces.
     """
     sr = colored.sr
     target = s.loudness_target if target_lufs is None else target_lufs
     x = dsp.to_stereo(colored.data)
-
-    # 1. Makeup gain toward the loudness target.
-    x, _ = gain_to_lufs(x, sr, target)
-
-    # 2. Gentle pre-limiter soft-clip for density (perceived loudness w/o pump).
-    x = dsp.soft_clip_tanh(x, drive=0.25, sr=sr, oversample=2)
-
-    # 3. True-peak limiter, brick-walled at the ceiling, oversampled. Iterate
-    #    limit + loudness-match: density/limiting shifts loudness either way, so
-    #    correct down (a safe clean attenuation) or up (then re-limit) to target.
     ceiling = s.true_peak_ceiling_db
-    for _ in range(4):
-        x = _oversampled_limit(x, sr, ceiling, s.oversample)
+
+    # Converge to target loudness: each pass nudges gain toward target, shaves the
+    # tips with the soft clipper (density, body intact), then brick-walls inter-
+    # sample peaks with the oversampled limiter. Clipping/limiting nudge loudness,
+    # so iterate until we land on target.
+    for _ in range(5):
         cur = integrated_lufs(x, sr)
         if not np.isfinite(cur):
             break
         diff = target - cur
         if abs(diff) <= 0.3:
             break
-        if diff < 0:
-            # Too loud: clean gain reduction also lowers peaks — done.
-            x = (x * dsp.db_to_lin(diff)).astype(np.float32)
-            break
-        # Too quiet: push up, then re-limit on the next pass.
-        x = (x * dsp.db_to_lin(min(diff, 1.5))).astype(np.float32)
+        x = (x * dsp.db_to_lin(float(np.clip(diff, -6.0, 6.0)))).astype(np.float32)
+        x = dsp.soft_clipper(x, sr, ceiling_db=ceiling, knee_db=4.0, oversample=2)
+        x = _oversampled_limit(x, sr, ceiling, s.oversample)
 
     # Final safety: verify true peak; trim a hair if anything still pokes over.
     tp = dsp.true_peak_db(x, sr, s.oversample)

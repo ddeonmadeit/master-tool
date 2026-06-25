@@ -252,6 +252,34 @@ def _fit_length(x: np.ndarray, n: int) -> np.ndarray:
     return np.pad(x, ((0, n - x.shape[0]), (0, 0)))
 
 
+def soft_clipper(x: np.ndarray, sr: int, ceiling_db: float = -1.0,
+                 knee_db: float = 4.0, oversample: int = 2) -> np.ndarray:
+    """Threshold-based soft clipper — adds density without dulling the body.
+
+    Unlike a full-range waveshaper, audio below the knee (``knee_db`` under the
+    ceiling) passes through untouched; only peaks above it are softly rounded so
+    they asymptote to the ceiling and never exceed it. This is the loud-master
+    "clipper before the limiter" stage: it shaves transient tips so the limiter
+    does minimal gain reduction, while the body of the mix is never reshaped.
+    Oversampled so the rounding's harmonics don't alias.
+    """
+    x = ensure_2d(x)
+    c = db_to_lin(ceiling_db)
+    knee = db_to_lin(-knee_db)              # 0..1: where rounding begins below ceiling
+    up = signal.resample_poly(x, oversample, 1, axis=0) if oversample > 1 else x
+    y = up / c
+    a, sgn = np.abs(y), np.sign(y)
+    over = a > knee
+    if over.any():
+        t = (a[over] - knee) / (1.0 - knee)
+        a[over] = knee + (1.0 - knee) * np.tanh(t)   # -> 1.0 (ceiling), never above
+    shaped = (sgn * a) * c
+    down = signal.resample_poly(shaped, 1, oversample, axis=0) if oversample > 1 else shaped
+    if down.shape[0] != x.shape[0]:
+        down = _fit_length(down, x.shape[0])
+    return down.astype(np.float32)
+
+
 # --------------------------------------------------------------------------- #
 # True peak
 # --------------------------------------------------------------------------- #

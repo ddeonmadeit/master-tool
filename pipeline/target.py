@@ -16,14 +16,15 @@ from scipy.ndimage import uniform_filter1d
 from . import dsp
 
 # Relative target tilt in dB at anchor frequencies (only the *shape* matters;
-# it is mean-normalised before use). Solid but controlled lows, a gentle
-# low-mid scoop to clear mud, a tamed 4-8 kHz presence region for "smooth highs",
-# and a touch of air up top.
+# it is mean-normalised before use). Solid but controlled lows, a mild low-mid
+# scoop to clear mud, and only a *gentle* trim of the presence region — enough to
+# smooth harshness, not so much that it dulls the track — with a touch of air up
+# top. (Earlier versions cut 5-9 kHz by ~2 dB and made masters sound muffled.)
 HIPHOP_TARGET: list[tuple[float, float]] = [
-    (30, 1.0), (50, 2.0), (80, 1.6), (120, 0.9), (200, -0.4), (300, -1.2),
-    (500, -1.0), (800, -0.4), (1000, 0.0), (2000, -0.3), (3500, -1.2),
-    (5000, -2.0), (7000, -2.2), (9000, -1.6), (12000, -0.8), (16000, -0.3),
-    (20000, -1.2),
+    (30, 1.0), (50, 1.6), (80, 1.4), (120, 0.8), (200, -0.3), (300, -0.8),
+    (500, -0.6), (800, -0.2), (1000, 0.0), (2000, 0.0), (3500, -0.4),
+    (5000, -0.6), (7000, -0.6), (9000, -0.3), (12000, 0.0), (16000, 0.2),
+    (20000, -0.6),
 ]
 
 _REF_LO, _REF_HI = 300.0, 5000.0  # band both curves are aligned on (mean = 0)
@@ -52,7 +53,7 @@ def _mean_in_band(f: np.ndarray, vals: np.ndarray, lo: float, hi: float) -> floa
 
 
 def matching_eq(x: np.ndarray, sr: int, anchors=HIPHOP_TARGET,
-                strength: float = 0.7, max_db: float = 4.0,
+                strength: float = 0.5, max_db: float = 3.0,
                 numtaps: int = 4097) -> np.ndarray:
     """Nudge ``x`` toward the target tonal curve with a smooth linear-phase FIR.
 

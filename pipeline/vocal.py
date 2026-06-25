@@ -20,11 +20,13 @@ def condition(vocal: Audio, s: Settings) -> Audio:
     # 1. High-pass ~90 Hz, 12 dB/oct — clear sub-mud that clashes with 808/kick.
     x = dsp.highpass(x, sr, s.vocal_hpf_hz, order=2)
 
-    # 2. De-esser (default ON, gentle): dynamic reduction 6-8 kHz, max ~3 dB.
+    # 2. De-esser (default ON, gentle): dynamic reduction 6-8 kHz. Higher
+    #    threshold + lower max so it only catches real sibilance, not the whole
+    #    top end of a bright vocal.
     if s.deesser:
         x = dsp.dynamic_band_reduction(
             x, sr, low_hz=6000.0, high_hz=8500.0,
-            threshold_db=-30.0, ratio=3.0, max_reduction_db=3.0,
+            threshold_db=-26.0, ratio=3.0, max_reduction_db=2.5,
             attack_ms=0.5, release_ms=50.0,
         )
 

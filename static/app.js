@@ -98,6 +98,7 @@ function refreshMasterBtn() {
 // Master — async job with progress polling
 // ----------------------------------------------------------------------------
 const STAGE_LABELS = {
+  uploading: "Uploading…",
   ingest: "Decoding files",
   vocal: "Vocal conditioning",
   balance: "Balancing levels",
@@ -116,9 +117,15 @@ function stopPolling() {
 
 function showProgress(pct, stage, elapsed) {
   $("#prog-wrap").hidden = false;
-  $("#prog-bar").style.width = pct + "%";
   const label = STAGE_LABELS[stage] || stage;
-  $("#prog-label").textContent = `${label} · ${pct}% · ${elapsed}s elapsed`;
+  if (stage === "uploading") {
+    // Indeterminate: we don't know upload % — show a small pulsing fill + label.
+    $("#prog-bar").style.width = "15%";
+    $("#prog-label").textContent = label;
+  } else {
+    $("#prog-bar").style.width = pct + "%";
+    $("#prog-label").textContent = `${label} · ${pct}% · ${elapsed}s elapsed`;
+  }
 }
 
 function hideProgress() {
@@ -131,8 +138,10 @@ $("#master-btn").addEventListener("click", async () => {
   status.className = "status";
   status.textContent = "";
   $("#master-btn").disabled = true;
-  hideProgress();
   stopPolling();
+  // Show the bar immediately so the user always sees feedback, even while the
+  // (possibly large) files are still uploading and before the job starts.
+  showProgress(0, "uploading", 0);
 
   const fd = new FormData();
   fd.append("vocal", files.vocal);
@@ -149,6 +158,7 @@ $("#master-btn").addEventListener("click", async () => {
   } catch (e) {
     status.className = "status err";
     status.textContent = "Error: " + e.message;
+    hideProgress();
     refreshMasterBtn();
     return;
   }
