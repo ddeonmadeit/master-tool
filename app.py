@@ -14,6 +14,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import uuid
 import webbrowser
 
@@ -38,6 +39,10 @@ APP_PASSWORD = os.environ.get("APP_PASSWORD")
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "150"))
 
 app = FastAPI(title="Hip-Hop Mix & Master")
+
+# Per-job progress state: job_id → {stage, pct, elapsed_s, done, error, result}
+_JOB_STATUS: dict[str, dict] = {}
+_STATUS_LOCK = threading.Lock()
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
@@ -92,6 +97,43 @@ def _audio_urls(job_id: str) -> dict:
 # --------------------------------------------------------------------------- #
 # Routes
 # --------------------------------------------------------------------------- #
+def _run_job(job_id: str, vpath: str, ipath: str, rpath: str | None, s: Settings):
+    """Run the full pipeline in a background thread and write status to _JOB_STATUS."""
+    start = time.monotonic()
+
+    def progress_cb(stage: str, pct: int):
+        with _STATUS_LOCK:
+            _JOB_STATUS[job_id].update({"stage": stage, "pct": pct,
+                                        "elapsed_s": round(time.monotonic() - start, 1)})
+
+    try:
+        result = run(vpath, ipath, s, reference_path=rpath, progress_cb=progress_cb)
+    except Exception as exc:
+        with _STATUS_LOCK:
+            _JOB_STATUS[job_id].update({"done": True, "error": str(exc),
+                                        "elapsed_s": round(time.monotonic() - start, 1)})
+        return
+
+    job_dir = os.path.join(JOBS_DIR, job_id)
+    write_wav(os.path.join(job_dir, "master.wav"), result.master.data, result.master.sr)
+    write_wav(os.path.join(job_dir, "ab_premaster.wav"), result.ab_premaster.data,
+              result.ab_premaster.sr, subtype="PCM_16")
+    write_wav(os.path.join(job_dir, "ab_master.wav"), result.ab_master.data,
+              result.ab_master.sr, subtype="PCM_16")
+
+    full_result = {
+        "job_id": job_id,
+        "report": result.report,
+        "info": result.info,
+        "notices": result.notices,
+        "settings": s.to_dict(),
+        **_audio_urls(job_id),
+    }
+    with _STATUS_LOCK:
+        _JOB_STATUS[job_id].update({"done": True, "result": full_result,
+                                    "elapsed_s": round(time.monotonic() - start, 1)})
+
+
 @app.post("/api/master")
 async def api_master(
     vocal: UploadFile = File(...),
@@ -110,25 +152,23 @@ async def api_master(
     if reference is not None and (reference.filename or ""):
         rpath = await _save_upload(reference, job_dir, "reference")
 
-    try:
-        result = run(vpath, ipath, s, reference_path=rpath)
-    except Exception as exc:  # surface decode/processing errors to the UI
-        raise HTTPException(400, f"Processing failed: {exc}")
+    with _STATUS_LOCK:
+        _JOB_STATUS[job_id] = {"stage": "ingest", "pct": 0, "elapsed_s": 0.0,
+                                "done": False, "error": None, "result": None}
 
-    write_wav(os.path.join(job_dir, "master.wav"), result.master.data, result.master.sr)
-    write_wav(os.path.join(job_dir, "ab_premaster.wav"), result.ab_premaster.data,
-              result.ab_premaster.sr, subtype="PCM_16")
-    write_wav(os.path.join(job_dir, "ab_master.wav"), result.ab_master.data,
-              result.ab_master.sr, subtype="PCM_16")
+    t = threading.Thread(target=_run_job, args=(job_id, vpath, ipath, rpath, s),
+                         daemon=True)
+    t.start()
+    return JSONResponse({"job_id": job_id})
 
-    return JSONResponse({
-        "job_id": job_id,
-        "report": result.report,
-        "info": result.info,
-        "notices": result.notices,
-        "settings": s.to_dict(),
-        **_audio_urls(job_id),
-    })
+
+@app.get("/api/status/{job_id}")
+def api_status(job_id: str):
+    with _STATUS_LOCK:
+        st = _JOB_STATUS.get(job_id)
+    if st is None:
+        raise HTTPException(404, "Unknown job")
+    return JSONResponse(st)
 
 
 @app.post("/api/batch")

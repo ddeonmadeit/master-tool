@@ -95,13 +95,44 @@ function refreshMasterBtn() {
 }
 
 // ----------------------------------------------------------------------------
-// Master
+// Master — async job with progress polling
 // ----------------------------------------------------------------------------
+const STAGE_LABELS = {
+  ingest: "Decoding files",
+  vocal: "Vocal conditioning",
+  balance: "Balancing levels",
+  mixbus: "Summing mix bus",
+  master: "Mastering",
+  loudness: "Loudness & limiting",
+  report: "Generating report",
+  done: "Done",
+};
+
+let _pollTimer = null;
+
+function stopPolling() {
+  if (_pollTimer !== null) { clearInterval(_pollTimer); _pollTimer = null; }
+}
+
+function showProgress(pct, stage, elapsed) {
+  $("#prog-wrap").hidden = false;
+  $("#prog-bar").style.width = pct + "%";
+  const label = STAGE_LABELS[stage] || stage;
+  $("#prog-label").textContent = `${label} · ${pct}% · ${elapsed}s elapsed`;
+}
+
+function hideProgress() {
+  $("#prog-wrap").hidden = true;
+  $("#prog-bar").style.width = "0";
+}
+
 $("#master-btn").addEventListener("click", async () => {
   const status = $("#status");
   status.className = "status";
-  status.textContent = "Processing… (matching, mastering, limiting)";
+  status.textContent = "";
   $("#master-btn").disabled = true;
+  hideProgress();
+  stopPolling();
 
   const fd = new FormData();
   fd.append("vocal", files.vocal);
@@ -109,19 +140,46 @@ $("#master-btn").addEventListener("click", async () => {
   if (mode === "my_reference" && files.reference) fd.append("reference", files.reference);
   fd.append("settings", JSON.stringify(currentSettings()));
 
+  let jobId;
   try {
     const r = await fetch("/api/master", { method: "POST", body: fd });
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     const data = await r.json();
-    lastJob = data;
-    renderResult(data);
-    status.textContent = "Done.";
+    jobId = data.job_id;
   } catch (e) {
     status.className = "status err";
     status.textContent = "Error: " + e.message;
-  } finally {
     refreshMasterBtn();
+    return;
   }
+
+  showProgress(0, "ingest", 0);
+
+  _pollTimer = setInterval(async () => {
+    let st;
+    try {
+      const r = await fetch("/api/status/" + jobId);
+      if (!r.ok) { stopPolling(); status.className="status err"; status.textContent="Status check failed."; refreshMasterBtn(); return; }
+      st = await r.json();
+    } catch (_) { return; }
+
+    showProgress(st.pct, st.stage, st.elapsed_s);
+
+    if (st.error) {
+      stopPolling();
+      hideProgress();
+      status.className = "status err";
+      status.textContent = "Error: " + st.error;
+      refreshMasterBtn();
+    } else if (st.done) {
+      stopPolling();
+      hideProgress();
+      lastJob = st.result;
+      renderResult(st.result);
+      status.textContent = "";
+      refreshMasterBtn();
+    }
+  }, 500);
 });
 
 function renderResult(data) {

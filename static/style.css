@@ -70,6 +70,11 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .status { margin-top: 12px; color: var(--muted); min-height: 18px; }
 .status.err { color: var(--bad); }
 
+#prog-wrap { margin-top: 14px; }
+.prog-outer { background: var(--panel-2); border-radius: 4px; height: 6px; margin-bottom: 6px; overflow: hidden; }
+.prog-inner { background: var(--accent); border-radius: 4px; height: 6px; width: 0; transition: width .4s ease; }
+#prog-label { font-size: .75rem; color: var(--muted); }
+
 .result { margin-top: 26px; border-top: 1px solid var(--line); padding-top: 22px; }
 .notices { color: #ffd479; font-size: 13px; margin-bottom: 12px; }
 .notices div { margin-bottom: 6px; }

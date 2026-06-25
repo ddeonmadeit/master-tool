@@ -18,6 +18,7 @@ def balance(vocal: Audio, instrumental: Audio, s: Settings):
     sr = vocal.sr
     voc = dsp.to_mono(vocal.data)
     instr = dsp.to_stereo(instrumental.data)
+    voc, instr = dsp.match_length(voc, instr)
 
     voc_lufs = integrated_lufs(voc, sr)
     instr_lufs = integrated_lufs(instr, sr)

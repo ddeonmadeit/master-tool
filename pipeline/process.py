@@ -27,27 +27,41 @@ class Result:
 
 def run(vocal_path: str, instrumental_path: str, s: Settings,
         reference_path: str | None = None,
-        target_lufs: float | None = None) -> Result:
+        target_lufs: float | None = None,
+        progress_cb=None) -> Result:
+
+    def _p(stage: str, pct: int):
+        if progress_cb is not None:
+            progress_cb(stage, pct)
+
     # Stage 0 — ingest
+    _p("ingest", 0)
     voc, instr, sr = ingest.ingest_pair(vocal_path, instrumental_path, s.offset_ms)
 
     # Stage 1 — vocal conditioning
+    _p("vocal", 8)
     voc = vocal.condition(voc, s)
 
     # Stage 2 — balance + ducking
+    _p("balance", 18)
     voc, instr, balance_info = balance.balance(voc, instr, s)
 
     # Stage 3 — sum to bus (this is the pre-master mix for A/B)
+    _p("mixbus", 32)
     bus = mixbus.sum_to_bus(voc, instr, s)
 
     # Stage 4 — master (modes + signature chain)
+    _p("master", 37)
     colored, master_info, notices = master.master(bus, s, reference_path=reference_path)
 
     # Stage 6 — loudness + true peak + dither
+    _p("loudness", 82)
     final, loud_info = loudness.finalize(colored, s, target_lufs=target_lufs)
 
     # Stage 5 — report
+    _p("report", 94)
     rep = report.measure(final, s)
+    _p("done", 100)
 
     # Loudness-matched A/B previews
     ab_pre, _ = gain_to_lufs(bus.data, sr, AB_PREVIEW_LUFS)
