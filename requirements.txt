@@ -1,0 +1,13 @@
+# Hip-Hop Mix & Master Web App — dependencies (all free / open source)
+# Backend
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+
+# Audio DSP / IO
+numpy>=1.24,<2.0
+scipy>=1.10
+soundfile>=0.12          # libsndfile bindings (WAV/AIFF/FLAC)
+pyloudnorm>=0.1.1        # ITU-R BS.1770 LUFS metering (MIT)
+pedalboard>=0.9          # JUCE-grade EQ/comp/limiter/reverb/saturation (Spotify)
+matchering>=2.0          # reference-matching mastering core (GPLv3 — see README)

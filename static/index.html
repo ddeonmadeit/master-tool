@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hip-Hop Mix &amp; Master</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<header>
+  <h1>Hip-Hop Mix &amp; Master</h1>
+  <p class="tag">drop a vocal + a beat → loud, warm, wide, streaming-safe master</p>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="single">Single</button>
+  <button class="tab" data-tab="batch">Batch / Album</button>
+</nav>
+
+<!-- ───────────────────────── SINGLE ───────────────────────── -->
+<main id="single" class="panel active">
+  <section class="drops">
+    <div class="drop" id="drop-vocal" data-kind="vocal">
+      <div class="drop-label">Vocal</div>
+      <div class="drop-hint">drag &amp; drop or click — WAV / AIFF / FLAC / MP3</div>
+      <div class="drop-file"></div>
+      <input type="file" accept=".wav,.aif,.aiff,.flac,.mp3,.ogg" hidden />
+    </div>
+    <div class="drop" id="drop-instrumental" data-kind="instrumental">
+      <div class="drop-label">Instrumental</div>
+      <div class="drop-hint">drag &amp; drop or click — WAV / AIFF / FLAC / MP3</div>
+      <div class="drop-file"></div>
+      <input type="file" accept=".wav,.aif,.aiff,.flac,.mp3,.ogg" hidden />
+    </div>
+  </section>
+
+  <section class="controls">
+    <div class="mode-row">
+      <label>Master mode</label>
+      <div class="seg" id="mode">
+        <button class="seg-btn active" data-mode="genre">Genre reference</button>
+        <button class="seg-btn" data-mode="my_reference">My reference</button>
+        <button class="seg-btn" data-mode="auto">Fully automatic</button>
+      </div>
+    </div>
+
+    <div class="drop small" id="drop-reference" data-kind="reference" hidden>
+      <div class="drop-label">Reference track</div>
+      <div class="drop-hint">drop your reference master</div>
+      <div class="drop-file"></div>
+      <input type="file" accept=".wav,.aif,.aiff,.flac,.mp3,.ogg" hidden />
+    </div>
+
+    <div class="sliders">
+      <div class="slider">
+        <label>Vocal vs. beat <span class="val" id="v-vocal">0.0 dB</span></label>
+        <input type="range" id="s-vocal" min="-6" max="6" step="0.5" value="0" />
+      </div>
+      <div class="slider">
+        <label>Stereo width <span class="val" id="v-width">subtle</span></label>
+        <input type="range" id="s-width" min="0" max="1" step="0.05" value="0.5" />
+      </div>
+      <div class="slider">
+        <label>Warmth <span class="val" id="v-warmth">0.40</span></label>
+        <input type="range" id="s-warmth" min="0" max="1" step="0.05" value="0.4" />
+      </div>
+      <div class="slider">
+        <label>Loudness target <span class="val" id="v-loud">-9.0 LUFS</span></label>
+        <input type="range" id="s-loud" min="-12" max="-7" step="0.5" value="-9" />
+      </div>
+      <div class="slider">
+        <label>Vocal offset <span class="val" id="v-offset">0 ms</span></label>
+        <input type="range" id="s-offset" min="-50" max="50" step="1" value="0" />
+      </div>
+      <div class="toggles">
+        <label><input type="checkbox" id="t-deess" checked /> De-esser</label>
+        <label><input type="checkbox" id="t-duck" checked /> Ducking</label>
+        <label><input type="checkbox" id="t-glue" checked /> Mix-bus glue</label>
+        <label><input type="checkbox" id="t-verb" /> Glue reverb</label>
+      </div>
+    </div>
+
+    <button id="master-btn" class="primary" disabled>Master</button>
+    <div id="status" class="status"></div>
+  </section>
+
+  <section id="result" class="result" hidden>
+    <div id="notices" class="notices"></div>
+    <div class="ab">
+      <div class="ab-head">
+        <span>Loudness-matched A/B</span>
+        <div class="seg" id="ab-toggle">
+          <button class="seg-btn" data-ab="pre">Before (mix)</button>
+          <button class="seg-btn active" data-ab="master">After (master)</button>
+        </div>
+      </div>
+      <audio id="player" controls></audio>
+      <p class="ab-note">Both play at equal loudness — judge tone &amp; width, not level.</p>
+    </div>
+    <div id="report" class="report"></div>
+    <a id="download" class="primary download" download>Download 24-bit WAV</a>
+  </section>
+</main>
+
+<!-- ───────────────────────── BATCH ───────────────────────── -->
+<main id="batch" class="panel">
+  <section class="batch-intro">
+    <p>Queue multiple (vocal + instrumental) pairs. All process with the current
+       single-tab settings, then an album pass aligns every track to one loudness.</p>
+    <button id="add-pair" class="ghost">+ Add track pair</button>
+  </section>
+  <div id="pairs" class="pairs"></div>
+  <button id="batch-btn" class="primary" disabled>Process album</button>
+  <div id="batch-status" class="status"></div>
+  <div id="batch-result" class="batch-result"></div>
+</main>
+
+<footer>local · 24-bit · -9 LUFS · -1 dBTP · mono &lt;120 Hz</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

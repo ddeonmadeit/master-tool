@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+.DS_Store
+*.egg-info/
+
+# user-supplied reference audio (keep the folder + its README, ignore audio)
+references/hiphop/*.wav
+references/hiphop/*.aif
+references/hiphop/*.aiff
+references/hiphop/*.flac
+references/hiphop/*.mp3
+
+# scratch / outputs
+*.output
+mixmaster_jobs/
