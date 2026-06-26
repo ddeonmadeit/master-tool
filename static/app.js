@@ -72,8 +72,8 @@ $$("#mode .seg-btn").forEach((b) => b.addEventListener("click", () => {
   b.classList.add("active");
   mode = b.dataset.mode;
   $("#drop-reference").hidden = mode !== "my_reference";
-  // The voiced Sound applies whenever we're not matching a user's own reference.
-  $("#sound-row").hidden = mode === "my_reference";
+  // The Sound selector belongs only to Genre reference mode.
+  $("#sound-row").hidden = mode !== "genre";
   refreshMasterBtn();
 }));
 
