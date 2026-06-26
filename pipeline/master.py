@@ -96,7 +96,10 @@ def signature_chain(x: np.ndarray, sr: int, s: Settings,
                                    threshold_db=-16.0, ratio=2.0,
                                    max_reduction_db=2.0, attack_ms=1.0, release_ms=80.0)
     x = pb.Pedalboard([
-        pb.PeakFilter(cutoff_frequency_hz=3200.0, gain_db=0.8, q=0.8),    # vocal presence
+        # Broad upper-mid presence (the ear's most sensitive region): this is what
+        # makes a master "cut" and feel loud. Warm lows + present upper-mids is the
+        # classic loudness curve — full AND forward, not dull.
+        pb.PeakFilter(cutoff_frequency_hz=2800.0, gain_db=1.3, q=0.6),
         pb.HighShelfFilter(cutoff_frequency_hz=11000.0, gain_db=1.6, q=0.6),  # air
     ])(x, sr)
     x = dsp.hf_exciter(x, sr, freq=9500.0, amount=0.12)
@@ -152,7 +155,7 @@ def _run_matchering(bus: Audio, reference_path: str) -> np.ndarray:
 def master(bus: Audio, s: Settings, reference_path: str | None = None):
     """Returns (colored: Audio, info: dict, notices: list[str]).
 
-    Output is pre-loudness — loudness.finalize() applies -9 LUFS + true-peak.
+    Output is pre-loudness — loudness.finalize() applies the target LUFS + true-peak.
     """
     sr = bus.sr
     notices: list[str] = []

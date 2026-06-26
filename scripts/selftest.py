@@ -54,7 +54,8 @@ def main():
         vpath, ipath, ipath2, sr = _synth(td)
 
         print("Running single-track master (auto mode)…")
-        res = run(vpath, ipath, Settings(mode="auto"))
+        s = Settings(mode="auto")
+        res = run(vpath, ipath, s)
         rep = res.report
         print("  report:", {k: rep[k] for k in
               ("integrated_lufs", "true_peak_dbtp", "stereo_correlation", "low_band_side_energy")})
@@ -66,7 +67,7 @@ def main():
         assert info.subtype == "PCM_24", f"expected PCM_24, got {info.subtype}"
         assert info.samplerate == sr, "sample rate not preserved"
 
-        assert abs(rep["integrated_lufs"] + 9.0) <= 0.5, rep["integrated_lufs"]
+        assert abs(rep["integrated_lufs"] - s.loudness_target) <= 0.5, rep["integrated_lufs"]
         assert rep["true_peak_dbtp"] <= -0.95, rep["true_peak_dbtp"]
         assert rep["sample_peak_dbfs"] < 0.0, "clipping detected"
         assert rep["stereo_correlation"] >= 0.0, rep["stereo_correlation"]

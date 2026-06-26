@@ -1,6 +1,6 @@
 """Stage 6 — Loudness + true peak (mandatory, always runs).
 
-Push to ≈ -9 LUFS, optionally add density with a soft-clipper, then brick-wall
+Push to the target LUFS (default -8), optionally add density with a soft-clipper, then brick-wall
 at -1.0 dBTP with an oversampled true-peak limiter, and dither to 24-bit.
 """
 from __future__ import annotations
@@ -30,10 +30,10 @@ def _oversampled_limit(x: np.ndarray, sr: int, ceiling_db: float, oversample: in
 
     up = signal.resample_poly(x, oversample, 1, axis=0).astype(np.float32)
     # Stage 1: slow/long lookahead — handles sustained loudness without pumping.
-    up = dsp.lookahead_limiter(up, sr_os, ceiling_db - 0.3,
+    up = dsp.lookahead_limiter(up, sr_os, ceiling_db - 0.1,
                                lookahead_ms=2.0, release_ms=180.0)
     # Stage 2: fast/short lookahead — snaps the transient tips to the wall.
-    up = dsp.lookahead_limiter(up, sr_os, ceiling_db - 0.3,
+    up = dsp.lookahead_limiter(up, sr_os, ceiling_db - 0.1,
                                lookahead_ms=0.8, release_ms=40.0)
     np.clip(up, -ceiling, ceiling, out=up)
 
@@ -67,16 +67,18 @@ def finalize(colored: Audio, s: Settings, target_lufs: float | None = None):
     # (most of the level work is left to the limiter, so clipping distortion stays
     # low), then brick-walls inter-sample peaks with the two-stage limiter. Small
     # steps + gentle clipping = loud but clean, not crushed.
-    for _ in range(7):
+    for _ in range(8):
         cur = integrated_lufs(x, sr)
         if not np.isfinite(cur):
             break
         diff = target - cur
-        if abs(diff) <= 0.3:
+        if abs(diff) <= 0.15:
             break
         x = (x * dsp.db_to_lin(float(np.clip(diff, -3.0, 2.0)))).astype(np.float32)
+        # Clipper carries a fair share of the density (clipping percussive tips is
+        # the clean way to get loud in hip-hop); the limiter does the rest.
         x = dsp.soft_clipper(x, sr, ceiling_db=ceiling, knee_db=3.0,
-                             oversample=4, amount=0.5)
+                             oversample=4, amount=0.65)
         x = _oversampled_limit(x, sr, ceiling, s.oversample)
 
     # Final safety: verify true peak; trim a hair if anything still pokes over.

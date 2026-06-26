@@ -281,7 +281,7 @@ function reportHTML(rep) {
   const m = (k, v, unit) =>
     `<div class="metric"><div class="k">${k}</div><div class="vv">${v ?? "—"}${unit || ""}</div></div>`;
   const labels = {
-    loudness_on_target: "−9 LUFS ±0.5",
+    loudness_on_target: "loudness on target ±0.5",
     true_peak_safe: "≤ −1 dBTP",
     no_clipping: "no clipping",
     correlation_non_negative: "correlation ≥ 0",
