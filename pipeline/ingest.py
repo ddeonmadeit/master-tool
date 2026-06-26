@@ -113,6 +113,12 @@ def ingest_pair(vocal_path: str, instrumental_path: str, offset_ms: float = 0.0)
     return vocal, instr, work_sr
 
 
+def ingest_single(track_path: str) -> Audio:
+    """Decode a single already-mixed track to a stereo Audio at its native rate."""
+    a = decode(track_path)
+    return Audio(dsp.to_stereo(a.data), a.sr)
+
+
 def write_wav(path: str, data: np.ndarray, sr: int, subtype: str = "PCM_24") -> None:
     """Write a (n_samples, n_channels) float buffer to disk (24-bit by default)."""
     sf.write(path, dsp.ensure_2d(data), sr, subtype=subtype)

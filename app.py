@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from pipeline import Settings, process_album, run
+from pipeline import Settings, process_album, run, run_master_only
 from pipeline.ingest import write_wav
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -97,8 +97,13 @@ def _audio_urls(job_id: str) -> dict:
 # --------------------------------------------------------------------------- #
 # Routes
 # --------------------------------------------------------------------------- #
-def _run_job(job_id: str, vpath: str, ipath: str, rpath: str | None, s: Settings):
-    """Run the full pipeline in a background thread and write status to _JOB_STATUS."""
+def _run_job(job_id: str, runner, s: Settings):
+    """Run a pipeline ``runner(progress_cb)`` in a thread; write status/result.
+
+    ``runner`` is a callable taking a single ``progress_cb`` argument and
+    returning a pipeline ``Result`` — so the same job machinery serves both the
+    two-stem mix path and the single-track master path.
+    """
     start = time.monotonic()
 
     def progress_cb(stage: str, pct: int):
@@ -107,7 +112,7 @@ def _run_job(job_id: str, vpath: str, ipath: str, rpath: str | None, s: Settings
                                         "elapsed_s": round(time.monotonic() - start, 1)})
 
     try:
-        result = run(vpath, ipath, s, reference_path=rpath, progress_cb=progress_cb)
+        result = runner(progress_cb)
     except Exception as exc:
         with _STATUS_LOCK:
             _JOB_STATUS[job_id].update({"done": True, "error": str(exc),
@@ -134,6 +139,16 @@ def _run_job(job_id: str, vpath: str, ipath: str, rpath: str | None, s: Settings
                                     "elapsed_s": round(time.monotonic() - start, 1)})
 
 
+def _start_job(runner, s: Settings, job_id: str | None = None) -> str:
+    """Register a job (reusing ``job_id`` if given) and launch ``runner`` in a thread."""
+    job_id = job_id or uuid.uuid4().hex
+    with _STATUS_LOCK:
+        _JOB_STATUS[job_id] = {"stage": "ingest", "pct": 0, "elapsed_s": 0.0,
+                               "done": False, "error": None, "result": None}
+    threading.Thread(target=_run_job, args=(job_id, runner, s), daemon=True).start()
+    return job_id
+
+
 @app.post("/api/master")
 async def api_master(
     vocal: UploadFile = File(...),
@@ -152,13 +167,32 @@ async def api_master(
     if reference is not None and (reference.filename or ""):
         rpath = await _save_upload(reference, job_dir, "reference")
 
-    with _STATUS_LOCK:
-        _JOB_STATUS[job_id] = {"stage": "ingest", "pct": 0, "elapsed_s": 0.0,
-                                "done": False, "error": None, "result": None}
+    job_id = _start_job(
+        lambda cb: run(vpath, ipath, s, reference_path=rpath, progress_cb=cb), s,
+        job_id=job_id)
+    return JSONResponse({"job_id": job_id})
 
-    t = threading.Thread(target=_run_job, args=(job_id, vpath, ipath, rpath, s),
-                         daemon=True)
-    t.start()
+
+@app.post("/api/master_track")
+async def api_master_track(
+    track: UploadFile = File(...),
+    reference: UploadFile | None = File(None),
+    settings: str = Form("{}"),
+):
+    """Master a single already-mixed stereo track (no separate stems)."""
+    s = Settings.from_dict(json.loads(settings or "{}"))
+    job_id = uuid.uuid4().hex
+    job_dir = os.path.join(JOBS_DIR, job_id)
+    os.makedirs(job_dir, exist_ok=True)
+
+    tpath = await _save_upload(track, job_dir, "track")
+    rpath = None
+    if reference is not None and (reference.filename or ""):
+        rpath = await _save_upload(reference, job_dir, "reference")
+
+    job_id = _start_job(
+        lambda cb: run_master_only(tpath, s, reference_path=rpath, progress_cb=cb), s,
+        job_id=job_id)
     return JSONResponse({"job_id": job_id})
 
 

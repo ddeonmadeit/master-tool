@@ -3,8 +3,9 @@
 // ----------------------------------------------------------------------------
 // State
 // ----------------------------------------------------------------------------
-const files = { vocal: null, instrumental: null, reference: null };
+const files = { vocal: null, instrumental: null, reference: null, track: null };
 let mode = "genre";
+let inputKind = "stems";   // "stems" (vocal + beat) | "track" (full mix, master only)
 let lastJob = null;
 
 const $ = (sel) => document.querySelector(sel);
@@ -48,6 +49,21 @@ function wireDrop(el) {
 $$(".drop").forEach(wireDrop);
 
 // ----------------------------------------------------------------------------
+// Input selector (two stems vs. one full track)
+// ----------------------------------------------------------------------------
+$$("#input-mode .seg-btn").forEach((b) => b.addEventListener("click", () => {
+  $$("#input-mode .seg-btn").forEach((x) => x.classList.remove("active"));
+  b.classList.add("active");
+  inputKind = b.dataset.input;
+  const track = inputKind === "track";
+  $("#drops-stems").hidden = track;
+  $("#drops-track").hidden = !track;
+  // Mix-only controls are meaningless when mastering a finished track.
+  $$(".mix-only").forEach((el) => (el.hidden = track));
+  refreshMasterBtn();
+}));
+
+// ----------------------------------------------------------------------------
 // Mode selector
 // ----------------------------------------------------------------------------
 $$("#mode .seg-btn").forEach((b) => b.addEventListener("click", () => {
@@ -89,8 +105,9 @@ function currentSettings() {
 }
 
 function refreshMasterBtn() {
-  const ready = files.vocal && files.instrumental &&
-    (mode !== "my_reference" || files.reference);
+  const haveInput = inputKind === "track" ? !!files.track
+                                          : !!(files.vocal && files.instrumental);
+  const ready = haveInput && (mode !== "my_reference" || files.reference);
   $("#master-btn").disabled = !ready;
 }
 
@@ -144,14 +161,19 @@ $("#master-btn").addEventListener("click", async () => {
   showProgress(0, "uploading", 0);
 
   const fd = new FormData();
-  fd.append("vocal", files.vocal);
-  fd.append("instrumental", files.instrumental);
+  if (inputKind === "track") {
+    fd.append("track", files.track);
+  } else {
+    fd.append("vocal", files.vocal);
+    fd.append("instrumental", files.instrumental);
+  }
   if (mode === "my_reference" && files.reference) fd.append("reference", files.reference);
   fd.append("settings", JSON.stringify(currentSettings()));
 
+  const endpoint = inputKind === "track" ? "/api/master_track" : "/api/master";
   let jobId;
   try {
-    const r = await fetch("/api/master", { method: "POST", body: fd });
+    const r = await fetch(endpoint, { method: "POST", body: fd });
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     const data = await r.json();
     jobId = data.job_id;
@@ -194,6 +216,9 @@ $("#master-btn").addEventListener("click", async () => {
 
 function renderResult(data) {
   $("#result").hidden = false;
+  // "Before" is the mix in stems mode, the uploaded track in full-track mode.
+  const preBtn = $('#ab-toggle .seg-btn[data-ab="pre"]');
+  if (preBtn) preBtn.textContent = inputKind === "track" ? "Before (input)" : "Before (mix)";
   // notices
   const nz = $("#notices");
   nz.innerHTML = "";

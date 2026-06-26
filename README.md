@@ -39,6 +39,18 @@ Drop a **Vocal** and an **Instrumental**, pick a master mode, tweak the taste
 sliders, and click **Master**. You get a loudness-matched A/B preview, a quality
 report, and a **24-bit WAV** download.
 
+## Two stems or one full track
+
+Use the **Input** switch at the top of the Single tab:
+
+- **Vocal + Beat** (default) — the full mix-then-master pipeline.
+- **Full track** — already mixed your vocal and beat together? Upload the single
+  finished file and it runs **master only** (tonal match → signature chain →
+  loudness/true-peak), skipping the vocal/balance/mix stages. Mix-only controls
+  (vocal level, ducking, de-esser, offset) hide automatically. For the best
+  result the upload should still have **headroom** (peaks around −6 dBFS, not an
+  already-slammed/streaming file) — you'll get a heads-up if it's too hot.
+
 ## Master modes
 
 | Mode | What it does |

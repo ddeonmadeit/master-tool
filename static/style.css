@@ -32,7 +32,12 @@ h1 { margin: 0; font-size: 22px; letter-spacing: .3px; }
 .panel { display: none; padding: 22px 24px; max-width: 920px; }
 .panel.active { display: block; }
 
+/* The hidden attribute must win over the grid/flex display rules below. */
+[hidden] { display: none !important; }
+.input-row { margin-bottom: 16px; }
+
 .drops { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+#drops-track { grid-template-columns: 1fr; }
 .drop {
   background: var(--panel); border: 1.5px dashed var(--line); border-radius: 12px;
   padding: 26px 18px; text-align: center; cursor: pointer; transition: .15s;

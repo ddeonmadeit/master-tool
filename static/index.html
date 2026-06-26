@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Hip-Hop Mix &amp; Master</title>
-<link rel="stylesheet" href="/style.css?v=3" />
+<link rel="stylesheet" href="/style.css?v=4" />
 </head>
 <body>
 <header>
@@ -19,7 +19,15 @@
 
 <!-- ───────────────────────── SINGLE ───────────────────────── -->
 <main id="single" class="panel active">
-  <section class="drops">
+  <div class="mode-row input-row">
+    <label>Input</label>
+    <div class="seg" id="input-mode">
+      <button class="seg-btn active" data-input="stems">Vocal + Beat</button>
+      <button class="seg-btn" data-input="track">Full track</button>
+    </div>
+  </div>
+
+  <section class="drops" id="drops-stems">
     <div class="drop" id="drop-vocal" data-kind="vocal">
       <div class="drop-label">Vocal</div>
       <div class="drop-hint">drag &amp; drop or click — WAV / AIFF / FLAC / MP3</div>
@@ -29,6 +37,15 @@
     <div class="drop" id="drop-instrumental" data-kind="instrumental">
       <div class="drop-label">Instrumental</div>
       <div class="drop-hint">drag &amp; drop or click — WAV / AIFF / FLAC / MP3</div>
+      <div class="drop-file"></div>
+      <input type="file" accept=".wav,.aif,.aiff,.flac,.mp3,.ogg" hidden />
+    </div>
+  </section>
+
+  <section class="drops" id="drops-track" hidden>
+    <div class="drop" id="drop-track" data-kind="track">
+      <div class="drop-label">Full track</div>
+      <div class="drop-hint">your finished mix (vocal + beat together) — master only, no re-mixing</div>
       <div class="drop-file"></div>
       <input type="file" accept=".wav,.aif,.aiff,.flac,.mp3,.ogg" hidden />
     </div>
@@ -52,7 +69,7 @@
     </div>
 
     <div class="sliders">
-      <div class="slider">
+      <div class="slider mix-only">
         <label>Vocal vs. beat <span class="val" id="v-vocal">0.0 dB</span></label>
         <input type="range" id="s-vocal" min="-6" max="6" step="0.5" value="0" />
       </div>
@@ -68,15 +85,15 @@
         <label>Loudness target <span class="val" id="v-loud">-9.0 LUFS</span></label>
         <input type="range" id="s-loud" min="-12" max="-7" step="0.5" value="-9" />
       </div>
-      <div class="slider">
+      <div class="slider mix-only">
         <label>Vocal offset <span class="val" id="v-offset">0 ms</span></label>
         <input type="range" id="s-offset" min="-50" max="50" step="1" value="0" />
       </div>
       <div class="toggles">
-        <label><input type="checkbox" id="t-deess" checked /> De-esser</label>
-        <label><input type="checkbox" id="t-duck" checked /> Ducking</label>
+        <label class="mix-only"><input type="checkbox" id="t-deess" checked /> De-esser</label>
+        <label class="mix-only"><input type="checkbox" id="t-duck" checked /> Ducking</label>
         <label><input type="checkbox" id="t-glue" checked /> Mix-bus glue</label>
-        <label><input type="checkbox" id="t-verb" /> Glue reverb</label>
+        <label class="mix-only"><input type="checkbox" id="t-verb" /> Glue reverb</label>
       </div>
     </div>
 
@@ -121,6 +138,6 @@
 
 <footer>local · 24-bit · -9 LUFS · -1 dBTP · mono &lt;120 Hz</footer>
 
-<script src="/app.js?v=3"></script>
+<script src="/app.js?v=4"></script>
 </body>
 </html>
