@@ -280,12 +280,16 @@ def multiband_compress(x: np.ndarray, sr: int, low_hz: float = 110.0,
     initial kick transient), gently glue the mids, smooth the highs.
     """
     x = ensure_2d(x)
-    low = low or dict(ratio=3.0, attack_ms=12.0, release_ms=140.0,
-                      thresh_offset_db=4.0, makeup_db=1.0, max_gr_db=5.0)
+    # Low band: slower attack/release than a transient comp so it controls the
+    # 808/sub for an even, full low end *without* modulating the bass waveform
+    # within a cycle (which would sound like distortion). Gentle ratio + makeup
+    # keep the bottom weighty.
+    low = low or dict(ratio=2.5, attack_ms=22.0, release_ms=200.0,
+                      thresh_offset_db=4.0, makeup_db=1.2, max_gr_db=4.0)
     mid = mid or dict(ratio=2.0, attack_ms=25.0, release_ms=160.0,
                       thresh_offset_db=6.0, makeup_db=0.3, max_gr_db=3.0)
     high = high or dict(ratio=2.0, attack_ms=6.0, release_ms=90.0,
-                        thresh_offset_db=6.0, makeup_db=0.5, max_gr_db=3.0)
+                        thresh_offset_db=6.0, makeup_db=0.4, max_gr_db=3.0)
 
     below_high, band_high = lr_crossover(x, sr, high_hz)
     band_low, band_mid = lr_crossover(below_high, sr, low_hz)
@@ -360,7 +364,7 @@ def hf_exciter(x: np.ndarray, sr: int, freq: float = 9000.0,
     if rms < EPS:
         return x
     g = db_to_lin(-12.0) / rms                      # bring the band to a workable level
-    sat = soft_clip_tanh(hp * g, drive=0.7, sr=sr, oversample=2) / g
+    sat = soft_clip_tanh(hp * g, drive=0.6, sr=sr, oversample=4) / g
     harmonics = (sat - hp).astype(np.float32)       # the generated overtones only
     return (x + amount * harmonics).astype(np.float32)
 
@@ -372,15 +376,18 @@ def _fit_length(x: np.ndarray, n: int) -> np.ndarray:
 
 
 def soft_clipper(x: np.ndarray, sr: int, ceiling_db: float = -1.0,
-                 knee_db: float = 4.0, oversample: int = 2) -> np.ndarray:
+                 knee_db: float = 4.0, oversample: int = 4,
+                 amount: float = 1.0) -> np.ndarray:
     """Threshold-based soft clipper — adds density without dulling the body.
 
     Unlike a full-range waveshaper, audio below the knee (``knee_db`` under the
     ceiling) passes through untouched; only peaks above it are softly rounded so
-    they asymptote to the ceiling and never exceed it. This is the loud-master
-    "clipper before the limiter" stage: it shaves transient tips so the limiter
-    does minimal gain reduction, while the body of the mix is never reshaped.
-    Oversampled so the rounding's harmonics don't alias.
+    they asymptote to the ceiling. This is the loud-master "clipper before the
+    limiter" stage: it shaves transient tips so the limiter does minimal gain
+    reduction, while the body of the mix is never reshaped. ``amount`` 0..1 blends
+    the clipped result with the input, so it can shave gently and hand the rest to
+    the limiter (gentler clipping = far less audible distortion). 4x oversampled
+    so the rounding's harmonics don't alias into harshness.
     """
     x = ensure_2d(x)
     c = db_to_lin(ceiling_db)
@@ -396,6 +403,8 @@ def soft_clipper(x: np.ndarray, sr: int, ceiling_db: float = -1.0,
     down = signal.resample_poly(shaped, 1, oversample, axis=0) if oversample > 1 else shaped
     if down.shape[0] != x.shape[0]:
         down = _fit_length(down, x.shape[0])
+    if amount < 1.0:
+        down = amount * down + (1.0 - amount) * x
     return down.astype(np.float32)
 
 

@@ -80,28 +80,36 @@ def signature_chain(x: np.ndarray, sr: int, s: Settings,
     #    master sound even and professional instead of raw.
     x = dsp.multiband_compress(x, sr)
 
-    # 3. Warmth: asymmetric analog saturation (adds even-harmonic warmth, not
-    #    just edgy odd harmonics) + a touch of low-shelf weight. 4x oversampled.
-    x = dsp.analog_saturate(x, drive=0.5 * s.warmth, sr=sr, oversample=4, asym=0.3)
-    if s.warmth > 0:
-        x = pb.Pedalboard([
-            pb.LowShelfFilter(cutoff_frequency_hz=110.0, gain_db=1.2 * s.warmth, q=0.7),
-        ])(x, sr)
+    # 3. Warmth + weight: asymmetric analog saturation (even-harmonic warmth, not
+    #    just edgy odd harmonics) and a low-shelf for a full, slightly bass-heavy
+    #    bottom. A little low-mid body too, so it reads "full" rather than thin.
+    x = dsp.analog_saturate(x, drive=0.5 * s.warmth, sr=sr, oversample=4, asym=0.35)
+    x = pb.Pedalboard([
+        pb.LowShelfFilter(cutoff_frequency_hz=90.0, gain_db=1.6 + 1.4 * s.warmth, q=0.7),
+        pb.PeakFilter(cutoff_frequency_hz=180.0, gain_db=0.8, q=0.9),     # low-mid body
+    ])(x, sr)
 
-    # 4. Open up the top for clarity. First tame only genuinely harsh peaks
-    #    (surgical, single band), then a presence lift + air shelf + a subtle
-    #    harmonic exciter for sheen — this is where "clearer / brighter" comes from.
+    # 4. Open the top *gently*. Tame only genuinely harsh peaks, then a small
+    #    presence lift, a modest air shelf, and a light exciter — kept subtle so
+    #    it stays warm and clean (no high-frequency grit / harshness).
     x = dsp.dynamic_band_reduction(x, sr, 5000.0, 9000.0,
                                    threshold_db=-16.0, ratio=2.0,
                                    max_reduction_db=2.0, attack_ms=1.0, release_ms=80.0)
     x = pb.Pedalboard([
-        pb.PeakFilter(cutoff_frequency_hz=3200.0, gain_db=1.0, q=0.8),    # vocal presence
-        pb.HighShelfFilter(cutoff_frequency_hz=10500.0, gain_db=2.2, q=0.6),  # air
+        pb.PeakFilter(cutoff_frequency_hz=3200.0, gain_db=0.8, q=0.8),    # vocal presence
+        pb.HighShelfFilter(cutoff_frequency_hz=11000.0, gain_db=1.6, q=0.6),  # air
     ])(x, sr)
-    x = dsp.hf_exciter(x, sr, freq=9000.0, amount=0.2)
+    x = dsp.hf_exciter(x, sr, freq=9500.0, amount=0.12)
 
-    # 5. Stereo width (mid/side; lows mono).
+    # 5. Stereo width (mid/side; lows mono so the bass stays centred and punchy).
     x = apply_width(x, sr, s)
+
+    # 6. Bus glue: one gentle, slow full-band compressor over the whole mix so it
+    #    "breathes as one" — this is the cohesion ("all one") that multiband
+    #    banding alone doesn't give. ~1-2 dB, soft, musical.
+    x = pb.Pedalboard([
+        pb.Compressor(threshold_db=-14.0, ratio=1.8, attack_ms=30.0, release_ms=260.0),
+    ])(x, sr)
 
     return dsp.to_stereo(x)
 

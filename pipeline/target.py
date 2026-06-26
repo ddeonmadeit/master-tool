@@ -21,10 +21,10 @@ from . import dsp
 # smooth harshness, not so much that it dulls the track — with a touch of air up
 # top. (Earlier versions cut 5-9 kHz by ~2 dB and made masters sound muffled.)
 HIPHOP_TARGET: list[tuple[float, float]] = [
-    (30, 1.0), (50, 1.6), (80, 1.4), (120, 0.8), (200, -0.3), (300, -0.8),
-    (500, -0.6), (800, -0.2), (1000, 0.0), (2000, 0.0), (3500, -0.4),
-    (5000, -0.6), (7000, -0.6), (9000, -0.3), (12000, 0.0), (16000, 0.2),
-    (20000, -0.6),
+    (30, 1.6), (50, 2.2), (80, 2.0), (120, 1.3), (200, 0.4), (300, -0.2),
+    (500, -0.3), (800, -0.1), (1000, 0.0), (2000, -0.1), (3500, -0.5),
+    (5000, -0.7), (7000, -0.7), (9000, -0.4), (12000, -0.1), (16000, 0.0),
+    (20000, -0.7),
 ]
 
 _REF_LO, _REF_HI = 300.0, 5000.0  # band both curves are aligned on (mean = 0)

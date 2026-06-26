@@ -12,8 +12,8 @@ class Settings:
 
     # --- taste sliders ---
     vocal_level_db: float = 0.0  # ±6 dB around the balanced default (beat +1 LU)
-    width: float = 0.5           # 0 (subtle) .. 1 (wide)
-    warmth: float = 0.4          # 0 (off) .. 1 (strong)
+    width: float = 0.7           # 0 (subtle) .. 1 (wide) — wide by default
+    warmth: float = 0.5          # 0 (off) .. 1 (strong) — warm by default
     loudness_target: float = -9.0  # LUFS, slider range -12 .. -7
     glue_reverb: bool = False    # optional very-short plate, OFF by default
     offset_ms: float = 0.0       # manual latency nudge on the vocal

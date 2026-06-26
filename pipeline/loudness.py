@@ -62,19 +62,21 @@ def finalize(colored: Audio, s: Settings, target_lufs: float | None = None):
     x = dsp.to_stereo(colored.data)
     ceiling = s.true_peak_ceiling_db
 
-    # Converge to target loudness: each pass nudges gain toward target, shaves the
-    # tips with the soft clipper (density, body intact), then brick-walls inter-
-    # sample peaks with the oversampled limiter. Clipping/limiting nudge loudness,
-    # so iterate until we land on target.
-    for _ in range(5):
+    # Converge to target loudness. Each pass nudges gain toward target in gentle
+    # steps, lightly shaves the sharpest tips with a *blended* 4x soft clipper
+    # (most of the level work is left to the limiter, so clipping distortion stays
+    # low), then brick-walls inter-sample peaks with the two-stage limiter. Small
+    # steps + gentle clipping = loud but clean, not crushed.
+    for _ in range(7):
         cur = integrated_lufs(x, sr)
         if not np.isfinite(cur):
             break
         diff = target - cur
         if abs(diff) <= 0.3:
             break
-        x = (x * dsp.db_to_lin(float(np.clip(diff, -6.0, 6.0)))).astype(np.float32)
-        x = dsp.soft_clipper(x, sr, ceiling_db=ceiling, knee_db=4.0, oversample=2)
+        x = (x * dsp.db_to_lin(float(np.clip(diff, -3.0, 2.0)))).astype(np.float32)
+        x = dsp.soft_clipper(x, sr, ceiling_db=ceiling, knee_db=3.0,
+                             oversample=4, amount=0.5)
         x = _oversampled_limit(x, sr, ceiling, s.oversample)
 
     # Final safety: verify true peak; trim a hair if anything still pokes over.
