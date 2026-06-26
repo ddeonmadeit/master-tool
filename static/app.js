@@ -5,6 +5,7 @@
 // ----------------------------------------------------------------------------
 const files = { vocal: null, instrumental: null, reference: null, track: null };
 let mode = "genre";
+let genreSound = "trap";    // "trap" | "boombap" | "melodic"
 let inputKind = "stems";   // "stems" (vocal + beat) | "track" (full mix, master only)
 let lastJob = null;
 
@@ -71,7 +72,16 @@ $$("#mode .seg-btn").forEach((b) => b.addEventListener("click", () => {
   b.classList.add("active");
   mode = b.dataset.mode;
   $("#drop-reference").hidden = mode !== "my_reference";
+  // The voiced Sound applies whenever we're not matching a user's own reference.
+  $("#sound-row").hidden = mode === "my_reference";
   refreshMasterBtn();
+}));
+
+// Sound selector (Trap / Boom-bap / Melodic) — the voiced genre presets.
+$$("#sound .seg-btn").forEach((b) => b.addEventListener("click", () => {
+  $$("#sound .seg-btn").forEach((x) => x.classList.remove("active"));
+  b.classList.add("active");
+  genreSound = b.dataset.sound;
 }));
 
 // ----------------------------------------------------------------------------
@@ -92,6 +102,7 @@ bindSlider("#s-offset", "#v-offset", (v) => v.toFixed(0) + " ms");
 function currentSettings() {
   return {
     mode,
+    genre_sound: genreSound,
     vocal_level_db: parseFloat($("#s-vocal").value),
     width: parseFloat($("#s-width").value),
     warmth: parseFloat($("#s-warmth").value),

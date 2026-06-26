@@ -18,7 +18,7 @@ import tempfile
 import numpy as np
 import pedalboard as pb
 
-from . import dsp, target
+from . import dsp, sounds, target
 from .ingest import Audio, write_wav, decode
 from .settings import Settings
 
@@ -28,11 +28,14 @@ REFERENCES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "refer
 # --------------------------------------------------------------------------- #
 # Stereo width (mid/side, lows forced mono)
 # --------------------------------------------------------------------------- #
-def apply_width(x: np.ndarray, sr: int, s: Settings) -> np.ndarray:
+def apply_width(x: np.ndarray, sr: int, s: Settings,
+                width_override: float | None = None) -> np.ndarray:
     """Widen the side channel above ~300 Hz; force mono below ~120 Hz.
 
     Keeps correlation ≥ 0 by backing off the side gain if it goes out of phase.
+    ``width_override`` lets the active Sound scale the user's width setting.
     """
+    width = s.width if width_override is None else width_override
     x = dsp.to_stereo(x)
     mid, side = dsp.lr_to_ms(x)
     side2d = side[:, None]
@@ -42,7 +45,7 @@ def apply_width(x: np.ndarray, sr: int, s: Settings) -> np.ndarray:
 
     # Split remaining side at the width crossover; widen only the upper part.
     side_low, side_high = dsp.lr_crossover(side2d, sr, s.width_above_hz)
-    width_gain = 1.0 + 0.8 * s.width            # 1.0 (subtle) .. 1.8 (wide)
+    width_gain = 1.0 + 0.8 * width              # 1.0 (subtle) .. 1.8 (wide)
     side2d = side_low + side_high * width_gain
 
     out = dsp.ms_to_lr(mid, side2d[:, 0])
@@ -63,55 +66,56 @@ def apply_width(x: np.ndarray, sr: int, s: Settings) -> np.ndarray:
 def signature_chain(x: np.ndarray, sr: int, s: Settings,
                     do_target_match: bool = False) -> np.ndarray:
     x = dsp.to_stereo(x)
+    prof = sounds.get_sound(s.genre_sound)   # voiced Sound (Trap / Boom-bap / Melodic)
 
     # 1. Clarity EQ: kill rumble + a small mud dip.
     x = dsp.highpass(x, sr, 26.0, order=2)
     x = pb.Pedalboard([pb.PeakFilter(cutoff_frequency_hz=300.0, gain_db=-0.8, q=1.0)])(x, sr)
 
-    # 1b. Corrective minimum-phase tonal match toward the genre target curve.
-    #     Only when there is no reference (auto / out-of-box genre); a Matchering
-    #     reference already defines tone, so we don't fight it here.
+    # 1b. Corrective minimum-phase tonal match toward the active Sound's target
+    #     curve. Only when there is no reference (auto / out-of-box genre); a
+    #     Matchering reference already defines tone, so we don't fight it here.
     if do_target_match:
-        x = target.matching_eq(x, sr, strength=0.5, max_db=3.0)
+        x = target.matching_eq(x, sr, anchors=prof.target, strength=0.65, max_db=3.5)
 
-    # 2. Multiband glue (the "finished record" stage): tighten the sub/808 band
-    #    for punch, gently glue the mids and highs for cohesion and density. This
-    #    replaces the old single bus compressor — banded control is what makes a
-    #    master sound even and professional instead of raw.
+    # 2. Multiband glue: tighten the sub/808 for punch, glue mids/highs for
+    #    cohesion and density.
     x = dsp.multiband_compress(x, sr)
 
-    # 3. Warmth + weight: asymmetric analog saturation (even-harmonic warmth, not
-    #    just edgy odd harmonics) and a low-shelf for a full, slightly bass-heavy
-    #    bottom. A little low-mid body too, so it reads "full" rather than thin.
-    x = dsp.analog_saturate(x, drive=0.5 * s.warmth, sr=sr, oversample=4, asym=0.35)
+    # 3. HOUSE CHARACTER (under every Sound) — Kanye essence: even-harmonic analog
+    #    warmth + a soulful low-mid body + a full, weighty low-shelf. The Sound
+    #    scales the saturation and adds its own low weight on top.
+    x = dsp.analog_saturate(x, drive=0.5 * s.warmth * prof.sat_mult,
+                            sr=sr, oversample=4, asym=0.35)
     x = pb.Pedalboard([
-        pb.LowShelfFilter(cutoff_frequency_hz=90.0, gain_db=1.6 + 1.4 * s.warmth, q=0.7),
-        pb.PeakFilter(cutoff_frequency_hz=180.0, gain_db=0.8, q=0.9),     # low-mid body
+        pb.LowShelfFilter(cutoff_frequency_hz=90.0,
+                          gain_db=1.2 + 1.0 * s.warmth + 0.7 * prof.low_weight_db, q=0.7),
+        pb.PeakFilter(cutoff_frequency_hz=220.0, gain_db=1.0, q=0.9),   # Kanye low-mid body
     ])(x, sr)
 
-    # 4. Open the top *gently*. Tame only genuinely harsh peaks, then a small
-    #    presence lift, a modest air shelf, and a light exciter — kept subtle so
-    #    it stays warm and clean (no high-frequency grit / harshness).
+    # 4. Open the top per Sound: tame harsh peaks, then presence ("cut") + air +
+    #    a light exciter. The +0.4 dB air baseline is the untiljapan house layer
+    #    (a smooth, open top under everything).
     x = dsp.dynamic_band_reduction(x, sr, 5000.0, 9000.0,
                                    threshold_db=-16.0, ratio=2.0,
                                    max_reduction_db=2.0, attack_ms=1.0, release_ms=80.0)
     x = pb.Pedalboard([
-        # Broad upper-mid presence (the ear's most sensitive region): this is what
-        # makes a master "cut" and feel loud. Warm lows + present upper-mids is the
-        # classic loudness curve — full AND forward, not dull.
-        pb.PeakFilter(cutoff_frequency_hz=2800.0, gain_db=1.3, q=0.6),
-        pb.HighShelfFilter(cutoff_frequency_hz=11000.0, gain_db=1.6, q=0.6),  # air
+        pb.PeakFilter(cutoff_frequency_hz=2800.0, gain_db=prof.presence_db, q=0.6),
+        pb.HighShelfFilter(cutoff_frequency_hz=11000.0, gain_db=prof.air_db + 0.4, q=0.6),
     ])(x, sr)
     x = dsp.hf_exciter(x, sr, freq=9500.0, amount=0.12)
 
-    # 5. Stereo width (mid/side; lows mono so the bass stays centred and punchy).
-    x = apply_width(x, sr, s)
+    # 5. Stereo width per Sound (+0.05 untiljapan width baseline); lows stay mono.
+    eff_width = float(np.clip(s.width * prof.width_mult + 0.05, 0.0, 1.0))
+    x = apply_width(x, sr, s, width_override=eff_width)
 
-    # 6. Bus glue: one gentle, slow full-band compressor over the whole mix so it
-    #    "breathes as one" — this is the cohesion ("all one") that multiband
-    #    banding alone doesn't give. ~1-2 dB, soft, musical.
+    # 6. Bus glue so the master "breathes as one". Gentler / more open for the more
+    #    dynamic Sounds (boom-bap), denser for trap & melodic.
+    glue_thresh = -14.0 + (prof.dynamic - 1.0) * 16.0
+    glue_ratio = max(1.3, 1.8 - (prof.dynamic - 1.0) * 1.6)
     x = pb.Pedalboard([
-        pb.Compressor(threshold_db=-14.0, ratio=1.8, attack_ms=30.0, release_ms=260.0),
+        pb.Compressor(threshold_db=glue_thresh, ratio=glue_ratio,
+                      attack_ms=30.0, release_ms=260.0),
     ])(x, sr)
 
     return dsp.to_stereo(x)
@@ -190,5 +194,6 @@ def master(bus: Audio, s: Settings, reference_path: str | None = None):
     x = signature_chain(x, sr, s, do_target_match=not matched_to_reference)
 
     info = {"mode_used": mode, "requested_mode": s.mode,
-            "matched_to_reference": matched_to_reference}
+            "matched_to_reference": matched_to_reference,
+            "sound": s.genre_sound if not matched_to_reference else None}
     return Audio(dsp.to_stereo(x), sr), info, notices

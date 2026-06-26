@@ -9,6 +9,7 @@ from dataclasses import dataclass, asdict
 class Settings:
     # --- master mode ---
     mode: str = "genre"          # "genre" | "my_reference" | "auto"
+    genre_sound: str = "trap"    # voiced Sound: "trap" | "boombap" | "melodic"
 
     # --- taste sliders ---
     vocal_level_db: float = 0.0  # ±6 dB around the balanced default (beat +1 LU)
@@ -47,6 +48,7 @@ class Settings:
         self.warmth = float(max(0.0, min(1.0, self.warmth)))
         self.loudness_target = float(max(-12.0, min(-7.0, self.loudness_target)))
         self.mode = self.mode if self.mode in ("genre", "my_reference", "auto") else "genre"
+        self.genre_sound = self.genre_sound if self.genre_sound in ("trap", "boombap", "melodic") else "trap"
 
     def to_dict(self) -> dict:
         return asdict(self)

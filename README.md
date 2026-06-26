@@ -55,9 +55,25 @@ Use the **Input** switch at the top of the Single tab:
 
 | Mode | What it does |
 |---|---|
-| **Genre reference** (default) | If a reference WAV sits in `references/hiphop/`, Matchering matches your mix toward it. If not, it uses the **built-in hip-hop target curve** — so it works on-genre out of the box, no reference needed. |
+| **Genre reference** (default) | Pick a **Sound** (see below) and it voices your master to that style — no reference file needed. If a reference WAV sits in `references/hiphop/`, Matchering matches toward it instead. |
 | **My reference** | Drop your own reference master; Matchering matches toward it. |
-| **Fully automatic** | No reference — analyses your mix's spectrum and corrects it toward the genre target curve, then applies the signature chain. |
+| **Fully automatic** | No reference — analyses your mix's spectrum and corrects it toward the selected Sound's target curve, then applies the signature chain. |
+
+### Sounds (Genre selector)
+
+In Genre/Automatic mode, choose a **Sound** — a voiced preset tuned to a style:
+
+| Sound | Voiced from | Character |
+|---|---|---|
+| **Trap** | Young Thug · Future · Travis Scott | dark, 808-heavy, saturated, wide, loud |
+| **Boom-bap** | Kanye · JID · Joey Bada$$ · Griselda · Larry June | warm, mid-forward, punchy, more dynamic |
+| **Melodic / R&B** | untiljapan · Lancey Foux · Smino · Isiah Rashad | lush, smooth, widest, silky/airy top |
+
+Every Sound sits on a **house character**: a primary **Kanye** layer (soulful
+low-mid body, even-harmonic warmth, full and weighty) and a lighter **untiljapan**
+layer (a smooth, open top + width baseline). No copyrighted audio is bundled —
+each Sound is a *voicing* (target curve + dynamics/saturation/width), not a clip.
+For an exact match to one specific record, use **My reference**.
 
 > **Commercial references are user-supplied.** No copyrighted tracks are bundled.
 > The built-in target curve means you don't *need* one — but adding a clean,
