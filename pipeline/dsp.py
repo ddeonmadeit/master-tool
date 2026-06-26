@@ -164,6 +164,28 @@ def envelope_follower(x: np.ndarray, sr: int, attack_ms: float, release_ms: floa
     return np.maximum(fast, slow).astype(np.float32)
 
 
+def softknee_gr_db(env_db: np.ndarray, threshold_db: float, ratio: float,
+                   knee_db: float = 6.0) -> np.ndarray:
+    """Gain reduction (dB, >= 0) for a SOFT-KNEE downward compressor.
+
+    A hard knee snaps full compression on the instant the signal crosses the
+    threshold — audible and a bit cheap-sounding. A soft knee eases the ratio in
+    over a ``knee_db``-wide region around the threshold (quadratic interpolation),
+    which is what makes premium compressors sound smooth and "invisible".
+    """
+    slope = 1.0 - 1.0 / max(ratio, 1.0)
+    x = env_db - threshold_db
+    if knee_db <= 1e-6:
+        return np.maximum(x, 0.0) * slope
+    gr = np.zeros_like(env_db)
+    above = x >= knee_db / 2.0
+    knee = (x > -knee_db / 2.0) & ~above
+    gr[above] = x[above] * slope
+    kx = x[knee] + knee_db / 2.0
+    gr[knee] = slope * kx * kx / (2.0 * knee_db)
+    return gr
+
+
 def dynamic_band_reduction(
     x: np.ndarray,
     sr: int,
@@ -174,6 +196,7 @@ def dynamic_band_reduction(
     max_reduction_db: float = 3.0,
     attack_ms: float = 1.0,
     release_ms: float = 60.0,
+    knee_db: float = 6.0,
 ) -> np.ndarray:
     """Compress only the energy inside [low_hz, high_hz]; leave the rest untouched.
 
@@ -185,9 +208,8 @@ def dynamic_band_reduction(
 
     env = envelope_follower(band, sr, attack_ms, release_ms)
     env_db = 20.0 * np.log10(np.maximum(env, EPS))
-    over = np.maximum(env_db - threshold_db, 0.0)
-    gain_red_db = over * (1.0 - 1.0 / max(ratio, 1.0))
-    gain_red_db = np.minimum(gain_red_db, max_reduction_db)
+    gain_red_db = np.minimum(softknee_gr_db(env_db, threshold_db, ratio, knee_db),
+                             max_reduction_db)
     gain = (10.0 ** (-gain_red_db / 20.0)).astype(np.float32)[:, None]
 
     return (rest + band * gain).astype(np.float32)
@@ -224,12 +246,14 @@ def sidechain_band_duck(
 
 def _compress_band(b: np.ndarray, sr: int, ratio: float, attack_ms: float,
                    release_ms: float, thresh_offset_db: float,
-                   makeup_db: float = 0.0, max_gr_db: float = 6.0) -> np.ndarray:
-    """Feed-forward compressor for one band.
+                   makeup_db: float = 0.0, max_gr_db: float = 6.0,
+                   knee_db: float = 8.0) -> np.ndarray:
+    """Feed-forward, soft-knee compressor for one band.
 
     The threshold is set relative to the band's own RMS (``thresh_offset_db``
     above it) so it adapts to however much energy lives in that band rather than
-    relying on an absolute level — robust across very different songs.
+    relying on an absolute level — robust across very different songs. A wide
+    soft knee keeps the compression smooth and musical (premium-comp behaviour).
     """
     b = ensure_2d(b)
     rms = float(np.sqrt(np.mean(b ** 2))) if b.size else 0.0
@@ -239,8 +263,7 @@ def _compress_band(b: np.ndarray, sr: int, ratio: float, attack_ms: float,
 
     env = envelope_follower(b, sr, attack_ms, release_ms)
     env_db = 20.0 * np.log10(np.maximum(env, EPS))
-    over = np.maximum(env_db - threshold_db, 0.0)
-    gr_db = np.minimum(over * (1.0 - 1.0 / max(ratio, 1.0)), max_gr_db)
+    gr_db = np.minimum(softknee_gr_db(env_db, threshold_db, ratio, knee_db), max_gr_db)
     gain = (10.0 ** ((makeup_db - gr_db) / 20.0)).astype(np.float32)[:, None]
     return (b * gain).astype(np.float32)
 
@@ -292,6 +315,30 @@ def soft_clip_tanh(x: np.ndarray, drive: float, sr: int, oversample: int = 4) ->
     if down.shape[0] != x.shape[0]:
         down = _fit_length(down, x.shape[0])
     # blend a touch of dry to keep it subtle
+    mix = np.clip(0.5 + 0.5 * min(drive, 1.0), 0.5, 1.0)
+    return (mix * down + (1.0 - mix) * x).astype(np.float32)
+
+
+def analog_saturate(x: np.ndarray, drive: float, sr: int, oversample: int = 4,
+                    asym: float = 0.3) -> np.ndarray:
+    """Asymmetric waveshaper for *warm* analog colour (tube / transformer style).
+
+    A symmetric tanh only generates odd harmonics (3rd, 5th) — the edgier,
+    "digital" flavour. Biasing the waveshaper makes it asymmetric, which adds the
+    even harmonics (2nd) that the ear reads as warm, full and "expensive". The DC
+    the bias introduces is removed, and the stage is 4x oversampled so the new
+    harmonics don't alias into harshness. ``asym`` 0..1 sets the even/odd balance.
+    """
+    if drive <= 1e-4:
+        return ensure_2d(x)
+    x = ensure_2d(x)
+    k = 1.0 + 4.0 * drive          # waveshaper hardness
+    b = asym * drive               # asymmetry bias -> 2nd-harmonic warmth
+    up = signal.resample_poly(x, oversample, 1, axis=0)
+    shaped = (np.tanh(up * k + b) - np.tanh(b)) / np.tanh(k)   # subtract DC the bias adds
+    down = signal.resample_poly(shaped, 1, oversample, axis=0)
+    if down.shape[0] != x.shape[0]:
+        down = _fit_length(down, x.shape[0])
     mix = np.clip(0.5 + 0.5 * min(drive, 1.0), 0.5, 1.0)
     return (mix * down + (1.0 - mix) * x).astype(np.float32)
 

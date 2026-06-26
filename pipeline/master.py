@@ -80,8 +80,9 @@ def signature_chain(x: np.ndarray, sr: int, s: Settings,
     #    master sound even and professional instead of raw.
     x = dsp.multiband_compress(x, sr)
 
-    # 3. Warmth: gentle oversampled saturation + a touch of low-shelf weight.
-    x = dsp.soft_clip_tanh(x, drive=0.5 * s.warmth, sr=sr, oversample=2)
+    # 3. Warmth: asymmetric analog saturation (adds even-harmonic warmth, not
+    #    just edgy odd harmonics) + a touch of low-shelf weight. 4x oversampled.
+    x = dsp.analog_saturate(x, drive=0.5 * s.warmth, sr=sr, oversample=4, asym=0.3)
     if s.warmth > 0:
         x = pb.Pedalboard([
             pb.LowShelfFilter(cutoff_frequency_hz=110.0, gain_db=1.2 * s.warmth, q=0.7),
