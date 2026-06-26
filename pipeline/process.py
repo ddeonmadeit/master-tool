@@ -23,8 +23,10 @@ AB_PREVIEW_LUFS = -16.0
 class Result:
     master: Audio            # final 24-bit-ready master (float, dithered)
     premaster: Audio         # pre-master mix bus (raw, for reference)
-    ab_premaster: Audio      # loudness-matched preview of the pre-master mix
-    ab_master: Audio         # loudness-matched preview of the master
+    ab_premaster: Audio      # loudness-MATCHED preview of the pre-master mix
+    ab_master: Audio         # loudness-MATCHED preview of the master
+    ab_premaster_real: Audio # REAL-level preview of the mix (true loudness gap)
+    ab_master_real: Audio    # REAL-level preview of the master (audibly louder)
     report: dict
     info: dict
     notices: list
@@ -117,9 +119,16 @@ def _finish_from_bus(bus: Audio, s: Settings, reference_path: str | None,
     rep = report.measure(final, s)
     _p("done", 100)
 
-    # Loudness-matched A/B previews
+    # Loudness-MATCHED previews: both at one loudness, to judge tone/width.
     ab_pre, _ = gain_to_lufs(bus.data, sr, AB_PREVIEW_LUFS)
     ab_mas, _ = gain_to_lufs(final.data, sr, AB_PREVIEW_LUFS)
+
+    # REAL-level previews: ONE gain on BOTH, so you actually hear how much louder
+    # the master is than the mix (scaled so the master sits just under clipping).
+    mpeak = float(np.max(np.abs(final.data))) if final.data.size else 0.0
+    g = (dsp.db_to_lin(-1.0) / mpeak) if mpeak > 0 else 1.0
+    ab_pre_real = Audio(_safe(bus.data * g), sr)
+    ab_mas_real = Audio(_safe(final.data * g), sr)
 
     info = {**(extra_info or {}), **master_info, **loud_info, "working_sr": sr}
     return Result(
@@ -127,6 +136,8 @@ def _finish_from_bus(bus: Audio, s: Settings, reference_path: str | None,
         premaster=bus,
         ab_premaster=Audio(_safe(ab_pre), sr),
         ab_master=Audio(_safe(ab_mas), sr),
+        ab_premaster_real=ab_pre_real,
+        ab_master_real=ab_mas_real,
         report=rep,
         info=info,
         notices=notices,

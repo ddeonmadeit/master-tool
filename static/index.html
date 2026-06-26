@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Hip-Hop Mix &amp; Master</title>
-<link rel="stylesheet" href="/style.css?v=4" />
+<link rel="stylesheet" href="/style.css?v=5" />
 </head>
 <body>
 <header>
@@ -109,14 +109,21 @@
     <div id="notices" class="notices"></div>
     <div class="ab">
       <div class="ab-head">
-        <span>Loudness-matched A/B</span>
+        <span>A/B preview</span>
         <div class="seg" id="ab-toggle">
           <button class="seg-btn" data-ab="pre">Before (mix)</button>
           <button class="seg-btn active" data-ab="master">After (master)</button>
         </div>
       </div>
+      <div class="ab-head">
+        <span class="ab-sub">Level</span>
+        <div class="seg" id="ab-level">
+          <button class="seg-btn active" data-level="real">Real — hear it louder</button>
+          <button class="seg-btn" data-level="matched">Matched — judge tone</button>
+        </div>
+      </div>
       <audio id="player" controls></audio>
-      <p class="ab-note">Both play at equal loudness — judge tone &amp; width, not level.</p>
+      <p class="ab-note" id="ab-note"></p>
     </div>
     <div id="report" class="report"></div>
     <a id="download" class="primary download" download>Download 24-bit WAV</a>
@@ -138,6 +145,6 @@
 
 <footer>local · 24-bit · -9 LUFS · -1 dBTP · mono &lt;120 Hz</footer>
 
-<script src="/app.js?v=4"></script>
+<script src="/app.js?v=5"></script>
 </body>
 </html>

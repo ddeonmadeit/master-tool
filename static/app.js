@@ -214,6 +214,39 @@ $("#master-btn").addEventListener("click", async () => {
   }, 500);
 });
 
+// ----------------------------------------------------------------------------
+// A/B preview state (before/after  ×  real/matched level)
+// ----------------------------------------------------------------------------
+let abUrls = null;       // { real:{pre,master}, matched:{pre,master} }
+let abWhich = "master";  // "pre" | "master"
+let abLevel = "real";    // "real" | "matched"
+
+function syncSeg(sel, attr, value) {
+  $$(`${sel} .seg-btn`).forEach((b) =>
+    b.classList.toggle("active", b.dataset[attr] === value));
+}
+
+function applyAB() {
+  if (!abUrls) return;
+  const player = $("#player");
+  const wasPlaying = !player.paused;
+  const tpos = player.currentTime || 0;
+  player.src = abUrls[abLevel][abWhich];
+  player.load();
+  try { player.currentTime = tpos; } catch (_) {}
+  if (wasPlaying) player.play();
+  $("#ab-note").textContent = abLevel === "real"
+    ? "Real levels — the master plays as loud as it actually is, so you can hear the loudness increase over the mix."
+    : "Both at equal loudness — flip Before/After to judge tone & width, not level.";
+}
+
+$$("#ab-toggle .seg-btn").forEach((b) => b.addEventListener("click", () => {
+  abWhich = b.dataset.ab; syncSeg("#ab-toggle", "ab", abWhich); applyAB();
+}));
+$$("#ab-level .seg-btn").forEach((b) => b.addEventListener("click", () => {
+  abLevel = b.dataset.level; syncSeg("#ab-level", "level", abLevel); applyAB();
+}));
+
 function renderResult(data) {
   $("#result").hidden = false;
   // "Before" is the mix in stems mode, the uploaded track in full-track mode.
@@ -225,23 +258,17 @@ function renderResult(data) {
   (data.notices || []).forEach((n) => {
     const d = document.createElement("div"); d.textContent = "⚠ " + n; nz.appendChild(d);
   });
-  // A/B player
-  const player = $("#player");
-  const urls = { pre: data.ab_premaster_url, master: data.ab_master_url };
-  const setAB = (which) => {
-    const wasPlaying = !player.paused;
-    const tpos = player.currentTime || 0;
-    player.src = urls[which];
-    player.load();
-    player.currentTime = tpos;
-    if (wasPlaying) player.play();
+  // A/B player — store both level pairs; default to Real so the master is
+  // audibly louder (the loudness increase is the whole point of mastering).
+  abUrls = {
+    real:    { pre: data.ab_premaster_real_url, master: data.ab_master_real_url },
+    matched: { pre: data.ab_premaster_url,      master: data.ab_master_url },
   };
-  $$("#ab-toggle .seg-btn").forEach((b) => b.addEventListener("click", () => {
-    $$("#ab-toggle .seg-btn").forEach((x) => x.classList.remove("active"));
-    b.classList.add("active");
-    setAB(b.dataset.ab);
-  }));
-  setAB("master");
+  abWhich = "master";
+  abLevel = "real";
+  syncSeg("#ab-toggle", "ab", abWhich);
+  syncSeg("#ab-level", "level", abLevel);
+  applyAB();
   // report
   $("#report").innerHTML = reportHTML(data.report);
   // download

@@ -91,6 +91,8 @@ def _audio_urls(job_id: str) -> dict:
         "download_url": f"/api/download/{job_id}/master.wav",
         "ab_premaster_url": f"{base}/ab_premaster.wav",
         "ab_master_url": f"{base}/ab_master.wav",
+        "ab_premaster_real_url": f"{base}/ab_premaster_real.wav",
+        "ab_master_real_url": f"{base}/ab_master_real.wav",
     }
 
 
@@ -125,6 +127,10 @@ def _run_job(job_id: str, runner, s: Settings):
               result.ab_premaster.sr, subtype="PCM_16")
     write_wav(os.path.join(job_dir, "ab_master.wav"), result.ab_master.data,
               result.ab_master.sr, subtype="PCM_16")
+    write_wav(os.path.join(job_dir, "ab_premaster_real.wav"), result.ab_premaster_real.data,
+              result.ab_premaster_real.sr, subtype="PCM_16")
+    write_wav(os.path.join(job_dir, "ab_master_real.wav"), result.ab_master_real.data,
+              result.ab_master_real.sr, subtype="PCM_16")
 
     full_result = {
         "job_id": job_id,
