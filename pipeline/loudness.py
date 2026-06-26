@@ -15,18 +15,26 @@ from .settings import Settings
 
 
 def _oversampled_limit(x: np.ndarray, sr: int, ceiling_db: float, oversample: int) -> np.ndarray:
-    """Brick-wall at ``ceiling_db`` dBTP using an oversampled lookahead limiter.
+    """Brick-wall at ``ceiling_db`` dBTP using a two-stage oversampled limiter.
 
     Limits in the oversampled domain so inter-sample peaks are caught, then
-    decimates back. The ceiling is set a touch under target so post-decimation
-    ripple still lands under the brick wall; a final safety clip guarantees it.
+    decimates back. Two gentle stages instead of one hard one — a slower stage
+    rides sustained level (no pumping) and a faster stage catches the remaining
+    transient tips — so the chain extracts more loudness *cleanly* before the
+    safety clip. The ceiling is set a touch under target so post-decimation
+    ripple still lands under the brick wall.
     """
     x = dsp.to_stereo(x)
     ceiling = dsp.db_to_lin(ceiling_db)
+    sr_os = sr * oversample
 
     up = signal.resample_poly(x, oversample, 1, axis=0).astype(np.float32)
-    up = dsp.lookahead_limiter(up, sr * oversample, ceiling_db - 0.3,
-                               lookahead_ms=1.0, release_ms=80.0)
+    # Stage 1: slow/long lookahead — handles sustained loudness without pumping.
+    up = dsp.lookahead_limiter(up, sr_os, ceiling_db - 0.3,
+                               lookahead_ms=2.0, release_ms=180.0)
+    # Stage 2: fast/short lookahead — snaps the transient tips to the wall.
+    up = dsp.lookahead_limiter(up, sr_os, ceiling_db - 0.3,
+                               lookahead_ms=0.8, release_ms=40.0)
     np.clip(up, -ceiling, ceiling, out=up)
 
     down = signal.resample_poly(up, 1, oversample, axis=0).astype(np.float32)

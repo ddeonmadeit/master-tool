@@ -75,19 +75,23 @@ def matching_eq(x: np.ndarray, sr: int, anchors=HIPHOP_TARGET,
     corr_db = np.clip((tgt_db - mix_db) * float(strength), -max_db, max_db)
     corr_db = uniform_filter1d(corr_db, size=5, mode="nearest")
 
-    # Design a linear-phase FIR from the correction and apply it.
+    # Design the correction FIR, then convert it to MINIMUM PHASE before applying.
+    # A linear-phase FIR has a symmetric impulse, which smears a pre-echo onto
+    # every transient (kick/snare) and softens punch & clarity. The minimum-phase
+    # version has the same magnitude response but front-loaded energy and no
+    # pre-ringing — transients stay tight.
     fn = np.clip(f / (sr * 0.5), 0.0, 1.0)
     fn, gains = _prep_fir_points(fn, 10.0 ** (corr_db / 20.0))
     if numtaps % 2 == 0:
         numtaps += 1  # Type-I (odd) so Nyquist gain is unconstrained
-    fir = signal.firwin2(numtaps, fn, gains)
+    lin_fir = signal.firwin2(numtaps, fn, gains)
+    fir = signal.minimum_phase(lin_fir, method="homomorphic")
 
-    delay = numtaps // 2
     n = x2.shape[0]
     out = np.empty_like(x2)
     for c in range(x2.shape[1]):
         y = signal.fftconvolve(x2[:, c], fir, mode="full")
-        out[:, c] = y[delay:delay + n]
+        out[:, c] = y[:n]            # causal: minimum phase has only a small group delay
     return out.astype(np.float32)
 
 

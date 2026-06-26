@@ -222,6 +222,56 @@ def sidechain_band_duck(
     return (rest + band * gain).astype(np.float32)
 
 
+def _compress_band(b: np.ndarray, sr: int, ratio: float, attack_ms: float,
+                   release_ms: float, thresh_offset_db: float,
+                   makeup_db: float = 0.0, max_gr_db: float = 6.0) -> np.ndarray:
+    """Feed-forward compressor for one band.
+
+    The threshold is set relative to the band's own RMS (``thresh_offset_db``
+    above it) so it adapts to however much energy lives in that band rather than
+    relying on an absolute level — robust across very different songs.
+    """
+    b = ensure_2d(b)
+    rms = float(np.sqrt(np.mean(b ** 2))) if b.size else 0.0
+    if rms < EPS:
+        return b.astype(np.float32)
+    threshold_db = 20.0 * np.log10(rms) + thresh_offset_db
+
+    env = envelope_follower(b, sr, attack_ms, release_ms)
+    env_db = 20.0 * np.log10(np.maximum(env, EPS))
+    over = np.maximum(env_db - threshold_db, 0.0)
+    gr_db = np.minimum(over * (1.0 - 1.0 / max(ratio, 1.0)), max_gr_db)
+    gain = (10.0 ** ((makeup_db - gr_db) / 20.0)).astype(np.float32)[:, None]
+    return (b * gain).astype(np.float32)
+
+
+def multiband_compress(x: np.ndarray, sr: int, low_hz: float = 110.0,
+                       high_hz: float = 3000.0, low: dict | None = None,
+                       mid: dict | None = None, high: dict | None = None) -> np.ndarray:
+    """3-band feed-forward compressor — cohesion, punch and density.
+
+    Phase-coherent LR crossovers split the signal at ``low_hz``/``high_hz`` into
+    low (sub/808), mid (body) and high (presence) bands; each is compressed with
+    its own program and summed (the bands reconstruct flat). Defaults are tuned
+    for hip-hop: tighten the low band for punch (slowish attack preserves the
+    initial kick transient), gently glue the mids, smooth the highs.
+    """
+    x = ensure_2d(x)
+    low = low or dict(ratio=3.0, attack_ms=12.0, release_ms=140.0,
+                      thresh_offset_db=4.0, makeup_db=1.0, max_gr_db=5.0)
+    mid = mid or dict(ratio=2.0, attack_ms=25.0, release_ms=160.0,
+                      thresh_offset_db=6.0, makeup_db=0.3, max_gr_db=3.0)
+    high = high or dict(ratio=2.0, attack_ms=6.0, release_ms=90.0,
+                        thresh_offset_db=6.0, makeup_db=0.5, max_gr_db=3.0)
+
+    below_high, band_high = lr_crossover(x, sr, high_hz)
+    band_low, band_mid = lr_crossover(below_high, sr, low_hz)
+    out = (_compress_band(band_low, sr, **low)
+           + _compress_band(band_mid, sr, **mid)
+           + _compress_band(band_high, sr, **high))
+    return out.astype(np.float32)
+
+
 # --------------------------------------------------------------------------- #
 # Saturation / warmth
 # --------------------------------------------------------------------------- #
@@ -244,6 +294,28 @@ def soft_clip_tanh(x: np.ndarray, drive: float, sr: int, oversample: int = 4) ->
     # blend a touch of dry to keep it subtle
     mix = np.clip(0.5 + 0.5 * min(drive, 1.0), 0.5, 1.0)
     return (mix * down + (1.0 - mix) * x).astype(np.float32)
+
+
+def hf_exciter(x: np.ndarray, sr: int, freq: float = 9000.0,
+               amount: float = 0.22) -> np.ndarray:
+    """Add subtle high-frequency harmonics for air/sheen (perceived clarity).
+
+    Isolates the top end, normalises it to a level where a waveshaper actually
+    generates harmonics, then blends only the *newly created* harmonic content
+    back in. This opens up the top (sounds clearer/brighter) without simply
+    boosting existing hiss or sibilance the way a plain EQ shelf would.
+    """
+    if amount <= 1e-4:
+        return ensure_2d(x)
+    x = ensure_2d(x)
+    hp = highpass(x, sr, freq, order=2)
+    rms = float(np.sqrt(np.mean(hp ** 2))) if hp.size else 0.0
+    if rms < EPS:
+        return x
+    g = db_to_lin(-12.0) / rms                      # bring the band to a workable level
+    sat = soft_clip_tanh(hp * g, drive=0.7, sr=sr, oversample=2) / g
+    harmonics = (sat - hp).astype(np.float32)       # the generated overtones only
+    return (x + amount * harmonics).astype(np.float32)
 
 
 def _fit_length(x: np.ndarray, n: int) -> np.ndarray:

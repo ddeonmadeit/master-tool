@@ -66,42 +66,41 @@ def signature_chain(x: np.ndarray, sr: int, s: Settings,
 
     # 1. Clarity EQ: kill rumble + a small mud dip.
     x = dsp.highpass(x, sr, 26.0, order=2)
-    x = pb.Pedalboard([pb.PeakFilter(cutoff_frequency_hz=300.0, gain_db=-1.0, q=1.0)])(x, sr)
+    x = pb.Pedalboard([pb.PeakFilter(cutoff_frequency_hz=300.0, gain_db=-0.8, q=1.0)])(x, sr)
 
-    # 1b. Corrective tonal match toward the genre target curve. Only when there
-    #     is no reference (auto / out-of-box genre); a Matchering reference
-    #     already defines tone, so we don't fight it here.
+    # 1b. Corrective minimum-phase tonal match toward the genre target curve.
+    #     Only when there is no reference (auto / out-of-box genre); a Matchering
+    #     reference already defines tone, so we don't fight it here.
     if do_target_match:
         x = target.matching_eq(x, sr, strength=0.5, max_db=3.0)
 
-    # 2. Warmth: oversampled tanh saturation + optional low-shelf below 120 Hz.
-    #    2x is plenty for gentle drive; the mandatory 4x stays on the limiter.
-    x = dsp.soft_clip_tanh(x, drive=0.6 * s.warmth, sr=sr, oversample=2)
+    # 2. Multiband glue (the "finished record" stage): tighten the sub/808 band
+    #    for punch, gently glue the mids and highs for cohesion and density. This
+    #    replaces the old single bus compressor — banded control is what makes a
+    #    master sound even and professional instead of raw.
+    x = dsp.multiband_compress(x, sr)
+
+    # 3. Warmth: gentle oversampled saturation + a touch of low-shelf weight.
+    x = dsp.soft_clip_tanh(x, drive=0.5 * s.warmth, sr=sr, oversample=2)
     if s.warmth > 0:
         x = pb.Pedalboard([
-            pb.LowShelfFilter(cutoff_frequency_hz=120.0, gain_db=1.5 * s.warmth, q=0.7),
+            pb.LowShelfFilter(cutoff_frequency_hz=110.0, gain_db=1.2 * s.warmth, q=0.7),
         ])(x, sr)
 
-    # 3. Tame harsh highs dynamically. Thresholds sit high and reduction is
-    #    capped low so these only clamp genuinely hot/harsh transients instead of
-    #    riding the whole high end (which dulled the master). Then a little air.
-    x = dsp.dynamic_band_reduction(x, sr, 3000.0, 6000.0,
-                                   threshold_db=-18.0, ratio=2.0,
-                                   max_reduction_db=2.0, attack_ms=1.0, release_ms=80.0)
-    x = dsp.dynamic_band_reduction(x, sr, 6000.0, 10000.0,
-                                   threshold_db=-20.0, ratio=2.0,
+    # 4. Open up the top for clarity. First tame only genuinely harsh peaks
+    #    (surgical, single band), then a presence lift + air shelf + a subtle
+    #    harmonic exciter for sheen — this is where "clearer / brighter" comes from.
+    x = dsp.dynamic_band_reduction(x, sr, 5000.0, 9000.0,
+                                   threshold_db=-16.0, ratio=2.0,
                                    max_reduction_db=2.0, attack_ms=1.0, release_ms=80.0)
     x = pb.Pedalboard([
-        pb.HighShelfFilter(cutoff_frequency_hz=12000.0, gain_db=1.0, q=0.7),
+        pb.PeakFilter(cutoff_frequency_hz=3200.0, gain_db=1.0, q=0.8),    # vocal presence
+        pb.HighShelfFilter(cutoff_frequency_hz=10500.0, gain_db=2.2, q=0.6),  # air
     ])(x, sr)
+    x = dsp.hf_exciter(x, sr, freq=9000.0, amount=0.2)
 
-    # 4. Stereo width (mid/side; lows mono).
+    # 5. Stereo width (mid/side; lows mono).
     x = apply_width(x, sr, s)
-
-    # 5. Glue compression: gentle bus comp, ≤2 dB GR.
-    x = pb.Pedalboard([
-        pb.Compressor(threshold_db=-16.0, ratio=2.0, attack_ms=30.0, release_ms=250.0),
-    ])(x, sr)
 
     return dsp.to_stereo(x)
 
