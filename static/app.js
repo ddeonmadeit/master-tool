@@ -123,6 +123,57 @@ function refreshMasterBtn() {
 }
 
 // ----------------------------------------------------------------------------
+// Remember settings between visits (localStorage — no files, just the controls)
+// ----------------------------------------------------------------------------
+const SETTINGS_KEY = "mixmaster_settings_v1";
+
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY,
+      JSON.stringify({ ...currentSettings(), inputKind }));
+  } catch (_) { /* private mode / storage full — just don't persist */ }
+}
+
+function restoreSettings() {
+  let s;
+  try { s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null"); } catch (_) {}
+  if (!s) return;
+  // Sliders — set value then fire 'input' so the live label updates too.
+  const slider = (id, v) => {
+    if (v == null) return;
+    const el = $(id); el.value = v; el.dispatchEvent(new Event("input"));
+  };
+  slider("#s-vocal", s.vocal_level_db);
+  slider("#s-width", s.width);
+  slider("#s-warmth", s.warmth);
+  slider("#s-loud", s.loudness_target);
+  slider("#s-offset", s.offset_ms);
+  // Toggles.
+  const chk = (id, v) => { if (v != null) $(id).checked = v; };
+  chk("#t-deess", s.deesser); chk("#t-duck", s.ducking);
+  chk("#t-glue", s.mixbus_glue); chk("#t-verb", s.glue_reverb);
+  // Segmented controls — click the matching button so its side-effects run
+  // (active state, panel show/hide, state vars).
+  const seg = (sel, attr, val) => {
+    if (val == null) return;
+    const b = $(`${sel} .seg-btn[data-${attr}="${val}"]`);
+    if (b) b.click();
+  };
+  seg("#input-mode", "input", s.inputKind);
+  seg("#mode", "mode", s.mode);
+  seg("#sound", "sound", s.genre_sound);
+}
+
+// Persist on any control change, then load whatever was saved last.
+["#s-vocal", "#s-width", "#s-warmth", "#s-loud", "#s-offset"]
+  .forEach((id) => $(id).addEventListener("input", saveSettings));
+["#t-deess", "#t-duck", "#t-glue", "#t-verb"]
+  .forEach((id) => $(id).addEventListener("change", saveSettings));
+$$("#mode .seg-btn, #sound .seg-btn, #input-mode .seg-btn")
+  .forEach((b) => b.addEventListener("click", saveSettings));
+restoreSettings();
+
+// ----------------------------------------------------------------------------
 // Master — async job with progress polling
 // ----------------------------------------------------------------------------
 const STAGE_LABELS = {
