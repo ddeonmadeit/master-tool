@@ -82,12 +82,20 @@ def signature_chain(x: np.ndarray, sr: int, s: Settings,
     #    cohesion and density.
     x = dsp.multiband_compress(x, sr)
 
-    # 3. HOUSE CHARACTER (under every Sound) — Kanye essence: even-harmonic analog
-    #    warmth + a soulful low-mid body + a full, weighty low-shelf. The Sound
-    #    scales the saturation and adds its own low weight on top.
-    x = dsp.analog_saturate(x, drive=0.5 * s.warmth * prof.sat_mult,
-                            sr=sr, oversample=4, asym=0.35)
+    # 2b. Restore the attack the compression rounded off — a brief, differential
+    #     lift on the first milliseconds of each hit so the kick/snare still
+    #     cracks through a dense master (studio transient-shaper move).
+    x = dsp.transient_enhance(x, sr, amount=0.3, max_boost_db=2.0)
+
+    # 3. HOUSE CHARACTER (under every Sound) — Kanye essence, run tape-style:
+    #    lows/mids take the full even-harmonic saturation (thick, warm), highs
+    #    are driven far gentler so the top stays silky (tape self-erasure). Plus
+    #    a tape-machine head bump (~60 Hz), a soulful low-mid body, and a full,
+    #    weighty low-shelf. The Sound scales the drive and low weight.
+    drive = 0.5 * s.warmth * prof.sat_mult
+    x = dsp.tape_saturate(x, sr, drive=drive, oversample=4)
     x = pb.Pedalboard([
+        pb.PeakFilter(cutoff_frequency_hz=62.0, gain_db=0.5 + 0.6 * drive, q=1.1),  # head bump
         pb.LowShelfFilter(cutoff_frequency_hz=90.0,
                           gain_db=1.2 + 1.0 * s.warmth + 0.7 * prof.low_weight_db, q=0.7),
         pb.PeakFilter(cutoff_frequency_hz=220.0, gain_db=1.0, q=0.9),   # Kanye low-mid body
@@ -109,14 +117,13 @@ def signature_chain(x: np.ndarray, sr: int, s: Settings,
     eff_width = float(np.clip(s.width * prof.width_mult + 0.05, 0.0, 1.0))
     x = apply_width(x, sr, s, width_override=eff_width)
 
-    # 6. Bus glue so the master "breathes as one". Gentler / more open for the more
+    # 6. Bus glue so the master "breathes as one" — custom console-style comp
+    #    with soft knee + program-dependent (auto) release, the SSL-bus trait
+    #    that reads as "glued, not squashed". Gentler / more open for the more
     #    dynamic Sounds (boom-bap), denser for trap & melodic.
     glue_thresh = -14.0 + (prof.dynamic - 1.0) * 16.0
     glue_ratio = max(1.3, 1.8 - (prof.dynamic - 1.0) * 1.6)
-    x = pb.Pedalboard([
-        pb.Compressor(threshold_db=glue_thresh, ratio=glue_ratio,
-                      attack_ms=30.0, release_ms=260.0),
-    ])(x, sr)
+    x = dsp.bus_glue(x, sr, threshold_db=glue_thresh, ratio=glue_ratio)
 
     return dsp.to_stereo(x)
 

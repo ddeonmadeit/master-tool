@@ -299,6 +299,48 @@ def multiband_compress(x: np.ndarray, sr: int, low_hz: float = 110.0,
     return out.astype(np.float32)
 
 
+def transient_enhance(x: np.ndarray, sr: int, amount: float = 0.3,
+                      max_boost_db: float = 2.0) -> np.ndarray:
+    """Restore attack punch after bus compression (differential-envelope shaper).
+
+    Compression rounds off drum attacks; this compares a fast envelope against a
+    slow one and briefly lifts only the moments where the fast one leads — i.e.
+    the first milliseconds of a hit. The body between hits is untouched, so it
+    reads as "punchier", not "louder". Kept small (``max_boost_db``) so the
+    limiter downstream isn't fed spikes it has to crush back down.
+    """
+    if amount <= 1e-4:
+        return ensure_2d(x)
+    x = ensure_2d(x)
+    fast = envelope_follower(x, sr, attack_ms=1.0, release_ms=45.0)
+    slow = envelope_follower(x, sr, attack_ms=20.0, release_ms=45.0)
+    diff_db = 20.0 * np.log10(np.maximum(fast, EPS) / np.maximum(slow, EPS))
+    boost_db = np.clip(diff_db * amount, 0.0, max_boost_db)
+    gain = (10.0 ** (boost_db / 20.0)).astype(np.float32)[:, None]
+    return (x * gain).astype(np.float32)
+
+
+def bus_glue(x: np.ndarray, sr: int, threshold_db: float = -14.0,
+             ratio: float = 1.8, knee_db: float = 8.0, attack_ms: float = 25.0,
+             makeup_db: float = 0.4, max_gr_db: float = 3.0) -> np.ndarray:
+    """Analog-style bus compressor: soft knee + PROGRAM-DEPENDENT (auto) release.
+
+    The trait that makes console bus compressors sound "glued, not squashed" is
+    auto-release: after a brief hit the gain recovers quickly, after a sustained
+    loud passage it recovers slowly. Modelled by smoothing the gain reduction
+    with a fast and a slow pole and taking the max — short GR barely charges the
+    slow pole (fast recovery); sustained GR charges it fully (slow, pump-free
+    recovery). Reduction is capped so it stays a glue stage, never a crusher.
+    """
+    x = ensure_2d(x)
+    env = envelope_follower(x, sr, attack_ms, 120.0)
+    env_db = 20.0 * np.log10(np.maximum(env, EPS))
+    gr = np.minimum(softknee_gr_db(env_db, threshold_db, ratio, knee_db), max_gr_db)
+    gr = np.maximum(_onepole(gr, sr, 90.0), _onepole(gr, sr, 550.0))  # auto-release
+    gain = (10.0 ** ((makeup_db - gr) / 20.0)).astype(np.float32)[:, None]
+    return (x * gain).astype(np.float32)
+
+
 # --------------------------------------------------------------------------- #
 # Saturation / warmth
 # --------------------------------------------------------------------------- #
@@ -345,6 +387,27 @@ def analog_saturate(x: np.ndarray, drive: float, sr: int, oversample: int = 4,
         down = _fit_length(down, x.shape[0])
     mix = np.clip(0.5 + 0.5 * min(drive, 1.0), 0.5, 1.0)
     return (mix * down + (1.0 - mix) * x).astype(np.float32)
+
+
+def tape_saturate(x: np.ndarray, sr: int, drive: float, oversample: int = 4,
+                  split_hz: float = 3800.0) -> np.ndarray:
+    """Tape-machine-style saturation: drive the lows/mids, SOFTEN the highs.
+
+    Real tape doesn't saturate all frequencies equally — low/mid energy hits the
+    magnetic nonlinearity hard (thick, warm harmonics) while high frequencies
+    self-erase and come back smoother, never gritty. Emulate with a phase-coherent
+    LR split: the low branch gets the full asymmetric analog saturation, the high
+    branch a much gentler, more symmetric pass. This is the "full and warm but
+    silky on top" analog character, as opposed to a full-band waveshaper which
+    adds the same edge everywhere. (Head-bump EQ is applied by the caller.)
+    """
+    if drive <= 1e-4:
+        return ensure_2d(x)
+    x = ensure_2d(x)
+    low, high = lr_crossover(x, sr, split_hz)
+    low = analog_saturate(low, drive, sr, oversample=oversample, asym=0.35)
+    high = analog_saturate(high, drive * 0.4, sr, oversample=oversample, asym=0.15)
+    return (low + high).astype(np.float32)
 
 
 def hf_exciter(x: np.ndarray, sr: int, freq: float = 9000.0,
@@ -443,10 +506,16 @@ def lookahead_limiter(x: np.ndarray, sr: int, ceiling_db: float,
     look = max(1, int(lookahead_ms * 1e-3 * sr))
     g = minimum_filter1d(desired, size=2 * look + 1, mode="nearest")
 
-    # Smooth the *reduction* (1 - g): fast attack (reduction rises quickly),
-    # slow release (reduction falls slowly) — reuse the asymmetric follower.
+    # Smooth the *reduction* (1 - g) with fast attack and PROGRAM-DEPENDENT
+    # release: a brief transient recovers at ``release_ms`` (punch comes right
+    # back), a sustained loud passage recovers ~3.5x slower (no pumping). The
+    # max of the two followers picks the right behaviour automatically.
     reduction = np.clip(1.0 - g, 0.0, 1.0)
-    reduction = envelope_follower(reduction, sr, attack_ms=0.2, release_ms=release_ms)
+    red_fast = envelope_follower(reduction, sr, attack_ms=0.2, release_ms=release_ms)
+    red_slow = envelope_follower(reduction, sr, attack_ms=0.2, release_ms=release_ms * 3.5)
+    # weight the slow follower by how charged it is, so it only wins when GR has
+    # actually been sustained.
+    reduction = np.maximum(red_fast, red_slow * 0.9).astype(np.float32)
     g = (1.0 - reduction).astype(np.float32)
 
     out = x * g[:, None]
