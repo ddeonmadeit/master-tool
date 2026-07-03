@@ -388,7 +388,7 @@ function addPair() {
     btn.addEventListener("click", () => {
       const inp = document.createElement("input");
       inp.type = "file";
-      inp.accept = ".wav,.aif,.aiff,.flac,.mp3,.ogg";
+      inp.accept = "audio/*,.wav,.aif,.aiff,.aifc,.flac,.mp3,.m4a,.aac,.mp4,.ogg,.oga,.opus,.wma,.webm,.caf,.w64,.alac";
       inp.onchange = () => {
         const f = inp.files[0];
         if (f) { batchPairs[id][kind] = f; btn.textContent = f.name; btn.classList.add("set"); }

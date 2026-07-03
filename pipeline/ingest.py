@@ -13,7 +13,9 @@ from scipy import signal
 
 from . import dsp
 
-DECODABLE = {".wav", ".aif", ".aiff", ".flac", ".ogg"}
+# Formats libsndfile opens natively; anything else (m4a/aac/mp4, opus, wma,
+# webm, alac, …) is decoded through ffmpeg, so effectively any audio file works.
+DECODABLE = {".wav", ".aif", ".aiff", ".aifc", ".flac", ".ogg", ".oga", ".caf", ".w64"}
 
 
 @dataclass
@@ -32,21 +34,30 @@ class Audio:
         return self.data.shape[0]
 
 
-def _decode_mp3_via_ffmpeg(path: str) -> Audio:
-    """Decode formats libsndfile can't (e.g. MP3) by piping through ffmpeg."""
+def _decode_via_ffmpeg(path: str) -> Audio:
+    """Decode any format libsndfile can't (MP3, M4A/AAC, OPUS, WMA, …) via ffmpeg.
+
+    ffmpeg sniffs the actual container/codec from the file contents, so this
+    works even when the extension is missing or wrong.
+    """
     if shutil.which("ffmpeg") is None:
         raise RuntimeError(
-            "ffmpeg is required to decode this file (e.g. MP3) but was not found on PATH."
+            "ffmpeg is required to decode this file format but was not found on PATH."
         )
     tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
     tmp.close()
     try:
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", path, "-f", "wav", "-acodec", "pcm_f32le", tmp.name],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+        proc = subprocess.run(
+            ["ffmpeg", "-y", "-i", path, "-vn", "-f", "wav", "-acodec", "pcm_f32le", tmp.name],
+            capture_output=True,
         )
+        if proc.returncode != 0:
+            tail = proc.stderr.decode("utf-8", "replace").strip().splitlines()[-1:]
+            name = os.path.basename(path)
+            raise RuntimeError(
+                f"Couldn't decode '{name}' — it may be corrupted, DRM-protected, or "
+                f"not an audio file. ({' '.join(tail) or 'ffmpeg gave no detail'})"
+            )
         data, sr = sf.read(tmp.name, dtype="float32", always_2d=True)
     finally:
         os.unlink(tmp.name)
@@ -61,8 +72,8 @@ def decode(path: str) -> Audio:
             data, sr = sf.read(path, dtype="float32", always_2d=True)
             return Audio(dsp.ensure_2d(data), sr)
         except Exception:
-            return _decode_mp3_via_ffmpeg(path)
-    return _decode_mp3_via_ffmpeg(path)
+            return _decode_via_ffmpeg(path)
+    return _decode_via_ffmpeg(path)
 
 
 def resample(a: Audio, target_sr: int) -> Audio:
