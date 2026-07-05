@@ -450,8 +450,11 @@ def soft_clipper(x: np.ndarray, sr: int, ceiling_db: float = -1.0,
     reduction, while the body of the mix is never reshaped. ``amount`` 0..1 blends
     the clipped result with the input, so it can shave gently and hand the rest to
     the limiter (gentler clipping = far less audible distortion). 4x oversampled
-    so the rounding's harmonics don't alias into harshness.
+    so the rounding's harmonics don't alias into harshness; pass ``oversample=1``
+    when the caller already operates in an oversampled domain.
     """
+    if amount <= 1e-6:
+        return ensure_2d(x)
     x = ensure_2d(x)
     c = db_to_lin(ceiling_db)
     knee = db_to_lin(-knee_db)              # 0..1: where rounding begins below ceiling

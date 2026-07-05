@@ -43,6 +43,9 @@ app = FastAPI(title="Hip-Hop Mix & Master")
 # Per-job progress state: job_id → {stage, pct, elapsed_s, done, error, result}
 _JOB_STATUS: dict[str, dict] = {}
 _STATUS_LOCK = threading.Lock()
+# Cap simultaneous renders so parallel uploads can't OOM a small instance;
+# excess jobs wait in a "queued" state and start automatically.
+_JOB_SEMAPHORE = threading.Semaphore(int(os.environ.get("MAX_CONCURRENT_JOBS", "2")))
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
@@ -78,10 +81,46 @@ def _job_dir(job_id: str) -> str:
 
 
 async def _save_upload(upload: UploadFile, dest_dir: str, name: str) -> str:
+    """Stream an upload to disk, enforcing the MAX_UPLOAD_MB cap as we go."""
+    limit = MAX_UPLOAD_MB * 1024 * 1024
     path = os.path.join(dest_dir, name + os.path.splitext(upload.filename or "")[1])
+    written = 0
     with open(path, "wb") as f:
-        shutil.copyfileobj(upload.file, f)
+        while chunk := upload.file.read(1024 * 1024):
+            written += len(chunk)
+            if written > limit:
+                f.close()
+                os.unlink(path)
+                raise HTTPException(
+                    413, f"'{upload.filename}' is larger than the {MAX_UPLOAD_MB} MB "
+                         "upload limit. Export a smaller file (e.g. FLAC/WAV of just "
+                         "the song, not a full session).")
+            f.write(chunk)
     return path
+
+
+def _cleanup_old_jobs(ttl_hours: float | None = None) -> None:
+    """Delete job folders (and their status entries) older than the TTL.
+
+    Called on each new job so a long-running public instance can't slowly fill
+    its disk with old renders. Users download their master right away; anything
+    older than a few hours is abandoned.
+    """
+    ttl = float(os.environ.get("JOB_TTL_HOURS", "6")) if ttl_hours is None else ttl_hours
+    cutoff = time.time() - ttl * 3600.0
+    try:
+        entries = os.listdir(JOBS_DIR)
+    except OSError:
+        return
+    for name in entries:
+        d = os.path.join(JOBS_DIR, name)
+        try:
+            if os.path.isdir(d) and os.path.getmtime(d) < cutoff:
+                shutil.rmtree(d, ignore_errors=True)
+                with _STATUS_LOCK:
+                    _JOB_STATUS.pop(name, None)
+        except OSError:
+            continue
 
 
 def _audio_urls(job_id: str) -> dict:
@@ -106,20 +145,23 @@ def _run_job(job_id: str, runner, s: Settings):
     returning a pipeline ``Result`` — so the same job machinery serves both the
     two-stem mix path and the single-track master path.
     """
-    start = time.monotonic()
+    with _STATUS_LOCK:
+        _JOB_STATUS[job_id].update({"stage": "queued", "pct": 0})
+    with _JOB_SEMAPHORE:
+        start = time.monotonic()
 
-    def progress_cb(stage: str, pct: int):
-        with _STATUS_LOCK:
-            _JOB_STATUS[job_id].update({"stage": stage, "pct": pct,
-                                        "elapsed_s": round(time.monotonic() - start, 1)})
+        def progress_cb(stage: str, pct: int):
+            with _STATUS_LOCK:
+                _JOB_STATUS[job_id].update({"stage": stage, "pct": pct,
+                                            "elapsed_s": round(time.monotonic() - start, 1)})
 
-    try:
-        result = runner(progress_cb)
-    except Exception as exc:
-        with _STATUS_LOCK:
-            _JOB_STATUS[job_id].update({"done": True, "error": str(exc),
-                                        "elapsed_s": round(time.monotonic() - start, 1)})
-        return
+        try:
+            result = runner(progress_cb)
+        except Exception as exc:
+            with _STATUS_LOCK:
+                _JOB_STATUS[job_id].update({"done": True, "error": str(exc),
+                                            "elapsed_s": round(time.monotonic() - start, 1)})
+            return
 
     job_dir = os.path.join(JOBS_DIR, job_id)
     write_wav(os.path.join(job_dir, "master.wav"), result.master.data, result.master.sr)
@@ -165,6 +207,7 @@ async def api_master(
     s = Settings.from_dict(json.loads(settings or "{}"))
     job_id = uuid.uuid4().hex
     job_dir = os.path.join(JOBS_DIR, job_id)
+    _cleanup_old_jobs()
     os.makedirs(job_dir, exist_ok=True)
 
     vpath = await _save_upload(vocal, job_dir, "vocal")
@@ -189,6 +232,7 @@ async def api_master_track(
     s = Settings.from_dict(json.loads(settings or "{}"))
     job_id = uuid.uuid4().hex
     job_dir = os.path.join(JOBS_DIR, job_id)
+    _cleanup_old_jobs()
     os.makedirs(job_dir, exist_ok=True)
 
     tpath = await _save_upload(track, job_dir, "track")
@@ -226,6 +270,7 @@ async def api_batch(
 
     batch_id = uuid.uuid4().hex
     batch_dir = os.path.join(JOBS_DIR, batch_id)
+    _cleanup_old_jobs()
     os.makedirs(batch_dir, exist_ok=True)
 
     pairs = []

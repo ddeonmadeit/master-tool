@@ -14,21 +14,25 @@ from .meters import integrated_lufs
 from .settings import Settings
 
 
-def _oversampled_limit(x: np.ndarray, sr: int, ceiling_db: float, oversample: int) -> np.ndarray:
-    """Brick-wall at ``ceiling_db`` dBTP using a two-stage oversampled limiter.
+def _clip_and_limit(x: np.ndarray, sr: int, ceiling_db: float, oversample: int,
+                    clip_amount: float = 0.0) -> np.ndarray:
+    """Soft-clip + two-stage brick-wall limit in ONE oversampled pass.
 
-    Limits in the oversampled domain so inter-sample peaks are caught, then
-    decimates back. Two gentle stages instead of one hard one — a slower stage
-    rides sustained level (no pumping) and a faster stage catches the remaining
-    transient tips — so the chain extracts more loudness *cleanly* before the
-    safety clip. The ceiling is set a touch under target so post-decimation
-    ripple still lands under the brick wall.
+    Upsampling dominates the cost of the loudness stage, so the clipper and both
+    limiter stages share a single 4x domain (one up / one down) instead of each
+    resampling on their own — ~2x faster with bit-identical topology. Two gentle
+    limiter stages instead of one hard one: a slower stage rides sustained level
+    (no pumping) and a faster stage snaps the remaining transient tips. The
+    internal ceiling sits a touch under target so post-decimation ripple still
+    lands under the brick wall; a final clamp guarantees it.
     """
     x = dsp.to_stereo(x)
     ceiling = dsp.db_to_lin(ceiling_db)
     sr_os = sr * oversample
 
     up = signal.resample_poly(x, oversample, 1, axis=0).astype(np.float32)
+    up = dsp.soft_clipper(up, sr_os, ceiling_db=ceiling_db, knee_db=3.0,
+                          oversample=1, amount=clip_amount)
     # Stage 1: slow/long lookahead — handles sustained loudness without pumping.
     up = dsp.lookahead_limiter(up, sr_os, ceiling_db - 0.1,
                                lookahead_ms=2.0, release_ms=180.0)
@@ -45,7 +49,13 @@ def _oversampled_limit(x: np.ndarray, sr: int, ceiling_db: float, oversample: in
     return down
 
 
-def finalize(colored: Audio, s: Settings, target_lufs: float | None = None):
+def _oversampled_limit(x: np.ndarray, sr: int, ceiling_db: float, oversample: int) -> np.ndarray:
+    """Pure brick-wall limit (no clipping) — kept for callers outside finalize."""
+    return _clip_and_limit(x, sr, ceiling_db, oversample, clip_amount=0.0)
+
+
+def finalize(colored: Audio, s: Settings, target_lufs: float | None = None,
+             progress=None):
     """Reach the loudness target through a clipper -> true-peak limiter, dither.
 
     Returns (master_24: Audio, info: dict). ``master_24`` is float but already
@@ -67,19 +77,33 @@ def finalize(colored: Audio, s: Settings, target_lufs: float | None = None):
     # (most of the level work is left to the limiter, so clipping distortion stays
     # low), then brick-walls inter-sample peaks with the two-stage limiter. Small
     # steps + gentle clipping = loud but clean, not crushed.
-    for _ in range(8):
+    prev_gap = None
+    for i in range(8):
+        if progress is not None:
+            progress(min(i / 4.0, 0.95))
         cur = integrated_lufs(x, sr)
         if not np.isfinite(cur):
             break
         diff = target - cur
         if abs(diff) <= 0.15:
             break
-        x = (x * dsp.db_to_lin(float(np.clip(diff, -3.0, 2.0)))).astype(np.float32)
+        # Stagnation break: if the last pass barely closed the gap, the limiter
+        # is gain-reduction-bound — every further push gets eaten. Re-limiting an
+        # already-limited signal degrades it (and wastes most of the processing
+        # time), so accept the achieved loudness (within ~0.5 LU, inaudible).
+        if prev_gap is not None and abs(diff) > prev_gap - 0.08:
+            break
+        prev_gap = abs(diff)
+        # First pass: apply the whole makeup gain at once — clean gain into the
+        # clipper+limiter is exactly the design, and walking up in small steps
+        # would pay a full (expensive) limit pass per step. Later passes are
+        # small corrections, so keep them bounded.
+        step = float(diff) if i == 0 else float(np.clip(diff, -3.0, 2.0))
+        x = (x * dsp.db_to_lin(step)).astype(np.float32)
         # Clipper carries a fair share of the density (clipping percussive tips is
-        # the clean way to get loud in hip-hop); the limiter does the rest.
-        x = dsp.soft_clipper(x, sr, ceiling_db=ceiling, knee_db=3.0,
-                             oversample=4, amount=0.65)
-        x = _oversampled_limit(x, sr, ceiling, s.oversample)
+        # the clean way to get loud in hip-hop); the limiter does the rest — both
+        # share one oversampled pass, which is where most processing time goes.
+        x = _clip_and_limit(x, sr, ceiling, s.oversample, clip_amount=0.65)
 
     # Final safety: verify true peak; trim a hair if anything still pokes over.
     tp = dsp.true_peak_db(x, sr, s.oversample)

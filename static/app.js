@@ -173,11 +173,17 @@ $$("#mode .seg-btn, #sound .seg-btn, #input-mode .seg-btn")
   .forEach((b) => b.addEventListener("click", saveSettings));
 restoreSettings();
 
+$("#reset-defaults").addEventListener("click", () => {
+  try { localStorage.removeItem(SETTINGS_KEY); } catch (_) {}
+  location.reload();   // page reloads with the built-in defaults
+});
+
 // ----------------------------------------------------------------------------
 // Master — async job with progress polling
 // ----------------------------------------------------------------------------
 const STAGE_LABELS = {
   uploading: "Uploading…",
+  queued: "Waiting for a free slot…",
   ingest: "Decoding files",
   vocal: "Vocal conditioning",
   balance: "Balancing levels",
@@ -197,13 +203,19 @@ function stopPolling() {
 function showProgress(pct, stage, elapsed) {
   $("#prog-wrap").hidden = false;
   const label = STAGE_LABELS[stage] || stage;
-  if (stage === "uploading") {
-    // Indeterminate: we don't know upload % — show a small pulsing fill + label.
+  if (stage === "uploading" || stage === "queued") {
+    // Indeterminate: no meaningful % yet — show a small fill + the label only.
     $("#prog-bar").style.width = "15%";
     $("#prog-label").textContent = label;
   } else {
     $("#prog-bar").style.width = pct + "%";
-    $("#prog-label").textContent = `${label} · ${pct}% · ${elapsed}s elapsed`;
+    let txt = `${label} · ${pct}% · ${elapsed}s elapsed`;
+    // ETA from overall pace, once there's enough signal to extrapolate.
+    if (pct >= 15 && pct < 100 && elapsed > 2) {
+      const eta = Math.max(1, Math.round(elapsed * (100 - pct) / pct));
+      txt += ` · ~${eta}s left`;
+    }
+    $("#prog-label").textContent = txt;
   }
 }
 

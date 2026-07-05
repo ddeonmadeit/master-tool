@@ -64,7 +64,11 @@ def apply_width(x: np.ndarray, sr: int, s: Settings,
 # Signature chain (the character)
 # --------------------------------------------------------------------------- #
 def signature_chain(x: np.ndarray, sr: int, s: Settings,
-                    do_target_match: bool = False) -> np.ndarray:
+                    do_target_match: bool = False, progress=None) -> np.ndarray:
+    def _pp(frac: float):
+        if progress is not None:
+            progress(frac)
+
     x = dsp.to_stereo(x)
     prof = sounds.get_sound(s.genre_sound)   # voiced Sound (Trap / Boom-bap / Melodic)
 
@@ -78,15 +82,18 @@ def signature_chain(x: np.ndarray, sr: int, s: Settings,
     if do_target_match:
         x = target.matching_eq(x, sr, anchors=prof.target, strength=0.65, max_db=3.5)
 
+    _pp(0.15)
     # 2. Multiband glue: tighten the sub/808 for punch, glue mids/highs for
     #    cohesion and density.
     x = dsp.multiband_compress(x, sr)
 
+    _pp(0.45)
     # 2b. Restore the attack the compression rounded off — a brief, differential
     #     lift on the first milliseconds of each hit so the kick/snare still
     #     cracks through a dense master (studio transient-shaper move).
     x = dsp.transient_enhance(x, sr, amount=0.3, max_boost_db=2.0)
 
+    _pp(0.55)
     # 3. HOUSE CHARACTER (under every Sound) — Kanye essence, run tape-style:
     #    lows/mids take the full even-harmonic saturation (thick, warm), highs
     #    are driven far gentler so the top stays silky (tape self-erasure). Plus
@@ -100,7 +107,11 @@ def signature_chain(x: np.ndarray, sr: int, s: Settings,
                           gain_db=1.2 + 1.0 * s.warmth + 0.7 * prof.low_weight_db, q=0.7),
         pb.PeakFilter(cutoff_frequency_hz=220.0, gain_db=1.0, q=0.9),   # Kanye low-mid body
     ])(x, sr)
+    # DC-block: asymmetric saturation can leave program-dependent sub-DC drift;
+    # a gentle 1st-order 18 Hz HPF removes it without touching the audible lows.
+    x = dsp.highpass(x, sr, 18.0, order=1)
 
+    _pp(0.75)
     # 4. Open the top per Sound: tame harsh peaks, then presence ("cut") + air +
     #    a light exciter. The +0.4 dB air baseline is the untiljapan house layer
     #    (a smooth, open top under everything).
@@ -113,6 +124,7 @@ def signature_chain(x: np.ndarray, sr: int, s: Settings,
     ])(x, sr)
     x = dsp.hf_exciter(x, sr, freq=9500.0, amount=0.12)
 
+    _pp(0.9)
     # 5. Stereo width per Sound (+0.05 untiljapan width baseline); lows stay mono.
     eff_width = float(np.clip(s.width * prof.width_mult + 0.05, 0.0, 1.0))
     x = apply_width(x, sr, s, width_override=eff_width)
@@ -163,10 +175,12 @@ def _run_matchering(bus: Audio, reference_path: str) -> np.ndarray:
 # --------------------------------------------------------------------------- #
 # Entry point
 # --------------------------------------------------------------------------- #
-def master(bus: Audio, s: Settings, reference_path: str | None = None):
+def master(bus: Audio, s: Settings, reference_path: str | None = None,
+           progress=None):
     """Returns (colored: Audio, info: dict, notices: list[str]).
 
     Output is pre-loudness — loudness.finalize() applies the target LUFS + true-peak.
+    ``progress`` (optional) receives a 0..1 fraction as the chain advances.
     """
     sr = bus.sr
     notices: list[str] = []
@@ -198,7 +212,8 @@ def master(bus: Audio, s: Settings, reference_path: str | None = None):
 
     # Signature chain runs in every mode. The corrective target-match runs only
     # when no reference set the tone (auto / out-of-box genre).
-    x = signature_chain(x, sr, s, do_target_match=not matched_to_reference)
+    x = signature_chain(x, sr, s, do_target_match=not matched_to_reference,
+                        progress=progress)
 
     info = {"mode_used": mode, "requested_mode": s.mode,
             "matched_to_reference": matched_to_reference,

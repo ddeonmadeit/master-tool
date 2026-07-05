@@ -106,13 +106,19 @@ def _finish_from_bus(bus: Audio, s: Settings, reference_path: str | None,
         if progress_cb is not None:
             progress_cb(stage, pct)
 
-    # Stage 4 — master (modes + signature chain)
+    # Stage 4 — master (modes + signature chain). Sub-progress fills the span up
+    # to the loudness stage so the bar keeps moving through the longest stretch.
     _p("master", master_pct)
-    colored, master_info, notices = master.master(bus, s, reference_path=reference_path)
+    master_span = 78 - master_pct
+    colored, master_info, notices = master.master(
+        bus, s, reference_path=reference_path,
+        progress=lambda f: _p("master", master_pct + int(master_span * min(f, 1.0))))
 
-    # Stage 6 — loudness + true peak + dither
-    _p("loudness", 82)
-    final, loud_info = loudness.finalize(colored, s, target_lufs=target_lufs)
+    # Stage 6 — loudness + true peak + dither (iterative — also reports progress)
+    _p("loudness", 80)
+    final, loud_info = loudness.finalize(
+        colored, s, target_lufs=target_lufs,
+        progress=lambda f: _p("loudness", 80 + int(13 * min(f, 1.0))))
 
     # Stage 5 — report
     _p("report", 94)
