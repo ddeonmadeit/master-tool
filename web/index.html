@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hip-Hop Mix &amp; Master — Web</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header>
+  <h1>Hip-Hop Mix &amp; Master <span class="lite">web</span></h1>
+  <p class="tag">runs 100% in your browser — your audio never leaves this device</p>
+</header>
+
+<main>
+  <div class="mode-row">
+    <label>Input</label>
+    <div class="seg" id="input-mode">
+      <button class="seg-btn active" data-input="track">Full track</button>
+      <button class="seg-btn" data-input="stems">Vocal + Beat</button>
+    </div>
+  </div>
+
+  <section class="drops" id="drops-track">
+    <div class="drop" id="drop-track" data-kind="track">
+      <div class="drop-label">Full track</div>
+      <div class="drop-hint">drag &amp; drop or click — WAV / MP3 / M4A / FLAC and more</div>
+      <div class="drop-file"></div>
+      <input type="file" accept="audio/*" hidden />
+    </div>
+  </section>
+
+  <section class="drops two" id="drops-stems" hidden>
+    <div class="drop" data-kind="vocal">
+      <div class="drop-label">Vocal</div>
+      <div class="drop-hint">drag &amp; drop or click</div>
+      <div class="drop-file"></div>
+      <input type="file" accept="audio/*" hidden />
+    </div>
+    <div class="drop" data-kind="instrumental">
+      <div class="drop-label">Instrumental</div>
+      <div class="drop-hint">drag &amp; drop or click</div>
+      <div class="drop-file"></div>
+      <input type="file" accept="audio/*" hidden />
+    </div>
+  </section>
+
+  <div class="mode-row">
+    <label>Sound</label>
+    <div class="seg" id="sound">
+      <button class="seg-btn active" data-sound="trap">Trap</button>
+      <button class="seg-btn" data-sound="boombap">Boom-bap</button>
+      <button class="seg-btn" data-sound="melodic">Melodic / R&amp;B</button>
+    </div>
+  </div>
+
+  <div class="sliders">
+    <div class="slider" id="row-vocal" hidden>
+      <label>Vocal vs. beat <span class="val" id="v-vocal">0.0 dB</span></label>
+      <input type="range" id="s-vocal" min="-6" max="6" step="0.5" value="0" />
+    </div>
+    <div class="slider">
+      <label>Stereo width <span class="val" id="v-width">wide</span></label>
+      <input type="range" id="s-width" min="0" max="1" step="0.05" value="0.7" />
+    </div>
+    <div class="slider">
+      <label>Warmth <span class="val" id="v-warmth">0.50</span></label>
+      <input type="range" id="s-warmth" min="0" max="1" step="0.05" value="0.5" />
+    </div>
+    <div class="slider">
+      <label>Loudness target <span class="val" id="v-loud">-8.0 LUFS</span></label>
+      <input type="range" id="s-loud" min="-12" max="-7" step="0.5" value="-8" />
+    </div>
+  </div>
+
+  <button id="master-btn" class="primary" disabled>Master</button>
+  <div id="prog-wrap" hidden>
+    <div class="prog-outer"><div class="prog-inner" id="prog-bar"></div></div>
+    <div id="prog-label"></div>
+  </div>
+  <div id="status" class="status"></div>
+
+  <section id="result" hidden>
+    <div class="ab-head">
+      <span>A/B (real levels)</span>
+      <div class="seg" id="ab-toggle">
+        <button class="seg-btn" data-ab="pre">Before</button>
+        <button class="seg-btn active" data-ab="master">After (master)</button>
+      </div>
+    </div>
+    <audio id="player" controls></audio>
+    <div id="report" class="report"></div>
+    <a id="download" class="primary download" download="master.wav">Download 24-bit WAV</a>
+  </section>
+</main>
+
+<footer>in-browser engine · 24-bit · −1 dBTP · mono &lt;120 Hz ·
+  <a href="https://github.com/ddeonmadeit/master-tool">full server version</a></footer>
+
+<script src="app.js"></script>
+</body>
+</html>
