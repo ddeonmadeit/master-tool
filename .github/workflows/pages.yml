@@ -1,32 +1,35 @@
-name: Deploy web app to GitHub Pages
+name: Publish web app to GitHub Pages
 
+# Publishes web/ to the gh-pages branch, which GitHub Pages serves at
+# https://ddeonmadeit.github.io/master-tool/. (The token can't enable Pages via
+# the API, but serving from a pushed gh-pages branch needs no settings at all.)
 on:
   push:
     branches: [claude/new-session-j64z6q, main, master]
+    paths: ["web/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  publish:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: web
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Push web/ to gh-pages
+        run: |
+          cd web
+          touch .nojekyll
+          git init -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Publish web app (${GITHUB_SHA::7})"
+          git push --force \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" \
+            gh-pages
