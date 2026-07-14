@@ -1,3 +1,16 @@
+---
+title: Hip-Hop Mix & Master
+emoji: 🎚️
+colorFrom: purple
+colorTo: indigo
+sdk: docker
+app_port: 8000
+pinned: false
+---
+
+<!-- The block above is Hugging Face Spaces config — it lets this exact repo be
+     pushed to a free HF Space and run as-is. GitHub just shows it as a table. -->
+
 # Hip-Hop Mix & Master
 
 A **local, drag-and-drop web app** that turns a processed **vocal** + a finished

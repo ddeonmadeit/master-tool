@@ -8,9 +8,45 @@ serverless platforms — here's what works, fastest first.
 
 | Goal | Use | Why |
 |---|---|---|
-| A real public URL, always on | **Railway / Render / Fly.io** (Docker) | Real container, ffmpeg installs, process stays up |
+| **A free public URL** | **Hugging Face Spaces** (Docker) | Free tier: 2 vCPU, 16 GB RAM, permanent `*.hf.space` URL. Repo is pre-configured. |
+| A paid, always-on URL | **Railway / Render / Fly.io** (Docker) | Real container, more CPU, no sleep |
 | See it in a browser *right now* | **Local + Cloudflare Tunnel** | Instant public URL, no deploy, no account |
 | ❌ Not this | **Vercel / Netlify** | Serverless: no ffmpeg, ~250 MB limit, 10–60 s timeouts, no disk — the build won't fit and renders time out |
+
+## Option 0 — Hugging Face Spaces (FREE public URL)
+
+The free tier (2 vCPU / **16 GB RAM** / no credit card) comfortably runs this
+app. The repo already contains the Space config (the YAML block at the top of
+`README.md`) and a Spaces-compatible `Dockerfile` — push it as-is.
+
+1. Create a free account at **huggingface.co**, then **New Space** →
+   name it (e.g. `mixmaster`) → SDK: **Docker** → template: **Blank** →
+   hardware: **CPU basic (free)** → **Public** → Create.
+2. Get the files in — either way works:
+   - **Git (cleanest):** in a terminal, from your clone of this repo:
+     ```bash
+     git remote add space https://huggingface.co/spaces/YOUR_USERNAME/mixmaster
+     git push space claude/new-session-j64z6q:main
+     ```
+     (HF asks for your username + an **access token** as the password —
+     create one under Settings → Access Tokens → "write".)
+   - **No terminal:** on the Space page → **Files** → **Upload files** → drag
+     the whole repo folder in (grab it from GitHub → Code → Download ZIP,
+     unzip first).
+3. The Space builds (~3-5 min) and your link is live at
+   **`https://YOUR_USERNAME-mixmaster.hf.space`** — open it in any browser.
+
+**Recommended:** in the Space's **Settings → Variables and secrets**, add a
+secret `APP_PASSWORD` = something only you know. Free Spaces are public, and
+that makes the site ask for a password before anyone can use it.
+
+**Free-tier caveats (fair trade for $0):**
+- Renders are CPU-bound: on the free 2 vCPU expect roughly **1-2 min per song**.
+- The Space **sleeps after ~48 h without visits**; the first visit after that
+  takes ~1 min to wake. Your URL never changes.
+- Free Spaces (code + UI) are public. Your uploaded audio is **not** part of the
+  repo and job files are auto-deleted after a few hours, but don't treat a free
+  public Space as a private vault.
 
 ## Option A — Railway (recommended public URL)
 
